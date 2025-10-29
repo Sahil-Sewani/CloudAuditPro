@@ -1,0 +1,17 @@
+{
+    "dev": {
+    "app_function": "app.main:app",
+    "profile_name": "default",
+    "aws_region": "us-east-1",
+    "project_name": "cloudauditpro",
+    "runtime": "python3.11",
+    "s3_bucket": "your-zappa-deploy-bucket",
+    "environment_variables": {
+    "APP_ENV": "dev",
+    "AWS_DEFAULT_REGION": "us-east-1",
+    "EXTERNAL_ID": "cloudauditpro"
+    },
+    "timeout_seconds": 30,
+    "memory_size": 512
+    }
+    }

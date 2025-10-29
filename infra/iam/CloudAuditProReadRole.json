@@ -1,0 +1,24 @@
+{
+    "Role": {
+    "RoleName": "CloudAuditProReadRole",
+    "AssumeRolePolicyDocument": {
+    "Version": "2012-10-17",
+    "Statement": [
+    {
+    "Effect": "Allow",
+    "Principal": {"AWS": "arn:aws:iam::YOUR_APP_ACCOUNT_ID:root"},
+    "Action": "sts:AssumeRole",
+    "Condition": {
+    "StringEquals": {"sts:ExternalId": "cloudauditpro"}
+    }
+    }
+    ]
+    },
+    "Description": "Read-only role for CloudAuditPro to fetch Security Hub findings.",
+    "MaxSessionDuration": 3600
+    },
+    "ManagedPolicyArns": [
+    "arn:aws:iam::aws:policy/SecurityHubReadOnlyAccess",
+    "arn:aws:iam::aws:policy/AWSConfigUserAccess"
+    ]
+    }
