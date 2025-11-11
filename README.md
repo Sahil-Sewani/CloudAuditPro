@@ -82,4 +82,25 @@ npm install
 npm run dev
 ```
 
++-------------------+
+|   React Frontend  |
+| (localhost:5173)  |
++---------+---------+
+          |
+          v
++-------------------+        +----------------------+
+|  FastAPI Backend  | <----> |  Storage (DynamoDB)  |
+|  (uvicorn:8000)   |        |  or Postgres         |
++----+---+---+------+        +----------------------+
+     |   |   |
+     |   |   +------------------> SES (email reports)
+     |   +----------------------> Slack (alerts)
+     |
+     +--> AWS Scanner ---------------> AWS STS AssumeRole
+     |                                 | 
+     |                                 +--> Security Hub
+     |                                 +--> Config / S3 / EC2
+     |
+     +--> Network Scanner ------------> ASA / Nagios / TACACS
+
 
