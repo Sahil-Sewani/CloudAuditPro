@@ -1,3 +1,4 @@
+```mermaid
 flowchart LR
     subgraph User["User / Security Team"]
         U1["Web UI (React + Tailwind)"]
