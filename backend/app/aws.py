@@ -53,3 +53,57 @@ def list_findings(sh, start_iso: Optional[str] = None, end_iso: Optional[str] = 
         kwargs["NextToken"] = resp["NextToken"]
 
     return findings
+
+
+
+def s3_client_from_creds(creds: dict, region: str = DEFAULT_REGION):
+    return boto3.client(
+        "s3",
+        region_name=region,
+        aws_access_key_id=creds["AccessKeyId"],
+        aws_secret_access_key=creds["SecretAccessKey"],
+        aws_session_token=creds["SessionToken"],
+    )
+
+
+def get_s3_security_summary(creds: dict, region: str = DEFAULT_REGION):
+    s3 = s3_client_from_creds(creds, region)
+    buckets_resp = s3.list_buckets()
+    results = []
+
+    for b in buckets_resp.get("Buckets", []):
+        name = b["Name"]
+        # defaults
+        is_public = False
+        encryption_enabled = False
+
+        # 1) check public access via ACL (best-effort)
+        try:
+            acl = s3.get_bucket_acl(Bucket=name)
+            for grant in acl.get("Grants", []):
+                grantee = grant.get("Grantee", {})
+                if grantee.get("URI") == "http://acs.amazonaws.com/groups/global/AllUsers":
+                    is_public = True
+        except Exception:
+            pass  # some buckets may block ACL reads
+
+        # 2) check bucket encryption
+        try:
+            enc = s3.get_bucket_encryption(Bucket=name)
+            rules = enc["ServerSideEncryptionConfiguration"]["Rules"]
+            if rules:
+                encryption_enabled = True
+        except Exception:
+            # no encryption config
+            encryption_enabled = False
+
+        results.append(
+            {
+                "bucket": name,
+                "public": is_public,
+                "encryption_enabled": encryption_enabled,
+            }
+        )
+
+    return results
+

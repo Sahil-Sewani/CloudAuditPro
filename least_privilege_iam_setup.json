@@ -1,0 +1,28 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "SecurityHubReadOnly",
+        "Effect": "Allow",
+        "Action": [
+          "securityhub:GetFindings",
+          "securityhub:GetInsightResults",
+          "securityhub:Describe*",
+          "securityhub:List*"
+        ],
+        "Resource": "*"
+      },
+      {
+        "Sid": "S3MetadataRead",
+        "Effect": "Allow",
+        "Action": [
+          "s3:ListAllMyBuckets",
+          "s3:GetBucketAcl",
+          "s3:GetBucketEncryption",
+          "s3:GetBucketLocation"
+        ],
+        "Resource": "*"
+      }
+    ]
+  }
+  

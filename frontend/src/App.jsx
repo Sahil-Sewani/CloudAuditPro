@@ -11,6 +11,10 @@ export default function App() {
   const [loadingScan, setLoadingScan] = useState(false);
   const [loadingEmail, setLoadingEmail] = useState(false);
   const [error, setError] = useState("");
+  const [s3Summary, setS3Summary] = useState(null);
+  const [loadingS3, setLoadingS3] = useState(false);
+
+  // -------------------- Handlers --------------------
 
   const handleScan = async () => {
     setLoadingScan(true);
@@ -66,6 +70,35 @@ export default function App() {
     }
   };
 
+  const handleS3Summary = async () => {
+    setLoadingS3(true);
+    setError("");
+    setS3Summary(null);
+    try {
+      const res = await fetch(`${API_BASE}/aws/s3-summary`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: accountId,
+          role_name: roleName,
+          region: region,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.detail || "S3 summary failed");
+      }
+      const data = await res.json();
+      setS3Summary(data);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoadingS3(false);
+    }
+  };
+
+  // -------------------- UI --------------------
+
   return (
     <div className="min-h-screen flex justify-center p-6 bg-gray-900 text-gray-100">
       <div className="w-full max-w-5xl grid md:grid-cols-2 gap-6">
@@ -75,7 +108,7 @@ export default function App() {
             CloudAuditPro
           </h1>
           <p className="text-gray-400 mb-6 text-sm">
-            Connect your AWS account and run a Security Hub scan.
+            Connect your AWS account and run a Security Hub or S3 security scan.
           </p>
 
           <label className="block mb-3 text-sm">
@@ -126,7 +159,7 @@ export default function App() {
             </div>
           )}
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 flex-wrap">
             <button
               onClick={handleScan}
               disabled={loadingScan || !accountId}
@@ -141,6 +174,13 @@ export default function App() {
             >
               {loadingEmail ? "Sending..." : "Email report"}
             </button>
+            <button
+              onClick={handleS3Summary}
+              disabled={loadingS3 || !accountId}
+              className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
+            >
+              {loadingS3 ? "Checking S3..." : "S3 security"}
+            </button>
           </div>
         </div>
 
@@ -149,11 +189,14 @@ export default function App() {
           <h2 className="text-lg font-semibold mb-3 text-indigo-400">
             Scan results
           </h2>
-          {!scanResult && (
+
+          {!scanResult && !s3Summary && (
             <p className="text-gray-400 text-sm">
-              Run a scan to see Security Hub findings summarized here.
+              Run a scan to see Security Hub or S3 findings summarized here.
             </p>
           )}
+
+          {/* Security Hub results */}
           {scanResult && (
             <div className="space-y-3">
               <div className="bg-gray-900 rounded p-3 text-sm">
@@ -163,6 +206,36 @@ export default function App() {
               </div>
               <div className="bg-gray-950 rounded p-3 text-xs whitespace-pre-wrap font-mono leading-relaxed text-gray-200">
                 {scanResult.summary}
+              </div>
+            </div>
+          )}
+
+          {/* S3 security summary */}
+          {s3Summary && (
+            <div className="mt-6 bg-gray-900 rounded p-3 text-xs">
+              <h3 className="text-sm font-semibold mb-2 text-emerald-300">
+                S3 Security Summary
+              </h3>
+              <p className="mb-2">
+                Total: {s3Summary.total_buckets} • Public:{" "}
+                {s3Summary.public_buckets} • Unencrypted:{" "}
+                {s3Summary.unencrypted_buckets}
+              </p>
+              <div className="max-h-48 overflow-auto space-y-1">
+                {s3Summary.buckets.map((b) => (
+                  <div
+                    key={b.bucket}
+                    className="flex justify-between gap-2 border-b border-gray-800/40 pb-1"
+                  >
+                    <span>{b.bucket}</span>
+                    <span className="text-xs">
+                      {b.public ? "🌐 public" : "🔒 private"} •{" "}
+                      {b.encryption_enabled
+                        ? "🔐 encrypted"
+                        : "⚠️ no encryption"}
+                    </span>
+                  </div>
+                ))}
               </div>
             </div>
           )}

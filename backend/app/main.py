@@ -7,8 +7,14 @@ from dotenv import load_dotenv
 import boto3
 
 
-from .aws import assume_customer_role, securityhub_client_from_creds, list_findings
+from .aws import (
+    assume_customer_role,
+    securityhub_client_from_creds,
+    list_findings,
+    get_s3_security_summary,
+)
 from .report import build_summary
+
 
 
 load_dotenv()
@@ -100,3 +106,24 @@ def email_report(inp: ScanInput):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.post("/aws/s3-summary")
+def s3_summary(inp: ScanInput):
+    try:
+        creds = assume_customer_role(inp.account_id, inp.role_name)
+        s3_summary = get_s3_security_summary(creds, inp.region)
+        # add a tiny rollup
+        total = len(s3_summary)
+        public = sum(1 for b in s3_summary if b["public"])
+        unencrypted = sum(1 for b in s3_summary if not b["encryption_enabled"])
+        return {
+            "total_buckets": total,
+            "public_buckets": public,
+            "unencrypted_buckets": unencrypted,
+            "buckets": s3_summary,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
