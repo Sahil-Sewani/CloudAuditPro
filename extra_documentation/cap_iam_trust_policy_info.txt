@@ -1,0 +1,15 @@
+IAM trust policy you can give to customers (or use yourself) so your CloudAuditPro account can assume their CloudAuditProReadRole with an External ID.
+
+What to change
+
+YOUR_CLOUDAUDITPRO_ACCOUNT_ID → replace with the AWS account ID where your CloudAuditPro backend runs (right now that’s your own account).
+
+"cloudauditpro" → this must match the EXTERNAL_ID you put in your .env and use in your code when calling assume_role.
+
+Why this matters
+
+It ensures only your CloudAuditPro account can assume the customer’s role.
+
+It protects against the “confused deputy” problem (that’s what the ExternalId is for).
+
+It lines up with the Python you already wrote.

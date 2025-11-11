@@ -1,0 +1,18 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "AllowCloudAuditProToAssume",
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "arn:aws:iam::YOUR_CLOUDAUDITPRO_ACCOUNT_ID:root"
+        },
+        "Action": "sts:AssumeRole",
+        "Condition": {
+          "StringEquals": {
+            "sts:ExternalId": "cloudauditpro"
+          }
+        }
+      }
+    ]
+  }

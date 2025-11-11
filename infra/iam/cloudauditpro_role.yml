@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "CloudAuditPro - Read-only IAM role for Security Hub + S3 checks"
+
+Parameters:
+  CloudAuditProAccountId:
+    Type: String
+    Description: "AWS Account ID where CloudAuditPro runs (the account that will assume this role)"
+  ExternalId:
+    Type: String
+    Default: "cloudauditpro"
+    Description: "External ID that CloudAuditPro will use when assuming this role"
+
+Resources:
+  CloudAuditProReadRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CloudAuditProReadRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudAuditProToAssume
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${CloudAuditProAccountId}:root"
+            Action: "sts:AssumeRole"
+            Condition:
+              StringEquals:
+                "sts:ExternalId": !Ref ExternalId
+      Description: "Read-only role for CloudAuditPro to pull Security Hub and S3 metadata."
+      ManagedPolicyArns:
+        # Security Hub read-only
+        - arn:aws:iam::aws:policy/SecurityHubReadOnlyAccess
+        # S3 read-only (for bucket visibility and encryption checks)
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+      Policies:
+        # Optional: add any extra permissions here as inline policies
+        - PolicyName: CloudAuditProExtras
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Example: allow describing Config / CloudTrail later
+              - Sid: AllowDescribeBasics
+                Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeVolumes
+                  - config:DescribeConfigurationRecorders
+                  - config:DescribeConfigurationRecorderStatus
+                Resource: "*"
+
+Outputs:
+  CloudAuditProRoleArn:
+    Description: "ARN of the role CloudAuditPro should assume"
+    Value: !GetAtt CloudAuditProReadRole.Arn
