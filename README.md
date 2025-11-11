@@ -82,6 +82,8 @@ npm install
 npm run dev
 ```
 
+### 🔁 Flowchart
+```lua
 +-------------------+
 |   React Frontend  |
 | (localhost:5173)  |
