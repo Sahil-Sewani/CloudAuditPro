@@ -46,15 +46,16 @@ It’s designed to give teams **instant visibility** into their AWS security pos
 
 **Tech Stack:**
 - **Backend:** Python + FastAPI  
+- **Frontend:** React + Vite + Tailwind CSS  
 - **Infrastructure:** AWS Lambda (Zappa), EventBridge, SES  
 - **Auth:** AWS Cognito (optional)  
 - **Payments:** Stripe Checkout  
-- **Frontend:** React + Tailwind CSS (optional for MVP)  
 
 ---
 
 ## ⚙️ Setup (Developer Quickstart)
 
+### 🖥 Backend Setup
 ```bash
 # Clone repo
 git clone https://github.com/YOURUSERNAME/CloudAuditPro.git
@@ -73,3 +74,12 @@ cp ../.env.example ../.env
 
 # Run locally
 python -m uvicorn app.main:app --reload
+```
+### 🖥 Frontend Setup
+```bash
+cd ../frontend
+npm install
+npm run dev
+```
+
+
