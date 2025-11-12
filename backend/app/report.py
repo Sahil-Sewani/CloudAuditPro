@@ -25,3 +25,32 @@ def build_summary(findings: List[Dict]) -> str:
         lines.append(f"  Fix: {hint}")
 
     return "\n".join(lines)
+
+def render_s3_section(s3_summary: dict) -> str:
+    if not s3_summary:
+        return "\n=== S3 Security Summary ===\n(No S3 data gathered)\n"
+
+    lines = []
+    lines.append("\n=== S3 Security Summary ===")
+    lines.append(
+        f"Buckets: {s3_summary.get('total_buckets', 0)}  |  "
+        f"Public: {s3_summary.get('public_buckets', 0)}  |  "
+        f"Unencrypted: {s3_summary.get('unencrypted_buckets', 0)}"
+    )
+
+    # List a few risky buckets (top 10)
+    risky = []
+    for b in s3_summary.get("buckets", []):
+        if b.get("public") or not b.get("encryption_enabled"):
+            risky.append(
+                f"- {b['bucket']}  "
+                f"[{'PUBLIC' if b.get('public') else 'private'}; "
+                f"{'ENCRYPTED' if b.get('encryption_enabled') else 'NO-ENCRYPTION'}]"
+            )
+    if risky:
+        lines.append("\nBuckets needing attention:")
+        lines.extend(risky[:10])
+    else:
+        lines.append("No obviously risky buckets detected.")
+
+    return "\n".join(lines)

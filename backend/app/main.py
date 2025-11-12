@@ -13,7 +13,7 @@ from .aws import (
     list_findings,
     get_s3_security_summary,
 )
-from .report import build_summary
+from .report import build_summary, render_s3_section
 
 
 
@@ -84,10 +84,26 @@ def scan(inp: ScanInput):
 @app.post("/report/email")
 def email_report(inp: ScanInput):
     try:
+        # Assume role & clients
         creds = assume_customer_role(inp.account_id, inp.role_name)
         sh = securityhub_client_from_creds(creds, inp.region)
+
+        # Security Hub findings
         findings = list_findings(sh, inp.start_iso, inp.end_iso)
-        summary = build_summary(findings)
+        sec_hub_text = build_summary(findings)
+
+        # S3 summary (new)
+        s3_summary = get_s3_security_summary(creds, inp.region)
+        s3_text = render_s3_section(
+            {
+                "total_buckets": len(s3_summary),
+                "public_buckets": sum(1 for b in s3_summary if b["public"]),
+                "unencrypted_buckets": sum(1 for b in s3_summary if not b["encryption_enabled"]),
+                "buckets": s3_summary,
+            }
+        )
+
+        body_text = f"{sec_hub_text}\n{s3_text}"
 
         to_addr = inp.email_to or TEST_TO
         if not (SES_FROM and to_addr):
@@ -99,11 +115,10 @@ def email_report(inp: ScanInput):
             Destination={"ToAddresses": [to_addr]},
             Message={
                 "Subject": {"Data": "Weekly AWS Security Report"},
-                "Body": {"Text": {"Data": summary}},
+                "Body": {"Text": {"Data": body_text}},
             },
         )
-        return {"sent_to": to_addr, "length": len(summary)}
-
+        return {"sent_to": to_addr, "length": len(body_text)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
