@@ -1,0 +1,2 @@
+Connecting to CloudAuditPro backend EC2 Server:
+ssh -i cloudauditpro-prod-key.pem ec2-user@18.212.164.176
