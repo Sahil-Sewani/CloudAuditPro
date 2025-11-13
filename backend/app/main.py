@@ -36,9 +36,12 @@ CANCEL_URL = os.getenv("CHECKOUT_CANCEL_URL", "https://example.com/cancel")
 
 app = FastAPI(title="CloudAuditPro API", version="0.1.0")
 
+frontend_origin = os.getenv("FRONTEND_ORIGIN", "https://app.cloudauditpro.app")
+
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    frontend_origin,
 ]
 
 app.add_middleware(

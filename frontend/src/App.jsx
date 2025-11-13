@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 
-const API_BASE = "http://127.0.0.1:8000"; // your FastAPI backend
+const API_BASE = import.meta.env.VITE_API_BASE; // your FastAPI backend
 
 export default function App() {
   const [accountId, setAccountId] = useState("");
