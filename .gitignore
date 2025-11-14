@@ -13,10 +13,17 @@ backend/cloudauditpro.db
 # Node / Vite
 node_modules/
 dist/
+frontend/node_modules/
 
 # Env files
 .env
 .env.*
+backend/.env
+frontend/.env
+
+# Build
+dist/
+build/
 
 # macOS
 .DS_Store

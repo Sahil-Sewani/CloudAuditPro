@@ -2,12 +2,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-
+from datetime import datetime
 from ..db import get_db
 from .. import models, schemas
 from ..auth_utils import (
     hash_password,
     verify_password,
+    create_password_reset_token,
+    send_password_reset_email,
     create_access_token,
     get_current_user,
 )
@@ -65,3 +67,68 @@ def login_user(
 @router.get("/me", response_model=schemas.UserRead)
 def me(current_user=Depends(get_current_user)):
     return current_user
+
+
+@router.post("/request-password-reset")
+def request_password_reset(
+    payload: schemas.PasswordResetRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Request a password reset.
+
+    Always returns 200 even if the email doesn't exist,
+    so we don't leak which emails are registered.
+    """
+    user = db.query(models.User).filter(models.User.email == payload.email).first()
+    if user:
+        reset = create_password_reset_token(db, user)
+        try:
+            send_password_reset_email(user.email, reset.token)
+        except Exception as e:
+            # In dev, we just log the error and don't break the API
+            print("Error sending reset email:", e)
+
+    return {"message": "If that email exists, a reset link has been sent."}
+
+
+@router.post("/reset-password")
+def reset_password(
+    payload: schemas.PasswordResetConfirm,
+    db: Session = Depends(get_db),
+):
+    """
+    Use a reset token to set a new password.
+    """
+    reset = (
+        db.query(models.PasswordResetToken)
+        .filter(models.PasswordResetToken.token == payload.token)
+        .first()
+    )
+
+    if (
+        not reset
+        or reset.used
+        or reset.expires_at < datetime.utcnow()
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token",
+        )
+
+    user = db.query(models.User).filter(models.User.id == reset.user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid reset token",
+        )
+
+    # Update password
+    user.password_hash = hash_password(payload.new_password)
+    reset.used = True
+
+    db.add(user)
+    db.add(reset)
+    db.commit()
+
+    return {"message": "Password updated successfully"}
