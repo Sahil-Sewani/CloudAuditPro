@@ -4,6 +4,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from .db import Base, engine
+from .routers import auth, onboarding
 import boto3
 
 
@@ -43,6 +45,13 @@ origins = [
     "http://127.0.0.1:5173",
     frontend_origin,
 ]
+
+# Create DB tables on startup (for SQLite / dev)
+Base.metadata.create_all(bind=engine)
+
+# Register routers
+app.include_router(auth.router)
+app.include_router(onboarding.router)
 
 app.add_middleware(
     CORSMiddleware,
