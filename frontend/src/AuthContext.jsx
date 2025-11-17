@@ -4,7 +4,7 @@ const AuthContext = createContext(null);
 
 // Change this later to your production API, e.g. https://api.cloudauditpro.app
 const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+  import.meta.env.VITE_API_BASE_URL || "https://api.cloudauditpro.app";
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem("cap_token"));

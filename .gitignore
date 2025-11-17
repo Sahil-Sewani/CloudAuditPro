@@ -2,10 +2,15 @@
 venv/
 __pycache__/
 *.pyc
+*.pyo
+*.db
+*.pyd
 .venv/
 backend/.venv/
 backend/__pycache__/
 backend/.pytest_cache/
+cloudauditpro.db
+backend/cloudauditpro.db
 
 # SQLite DB
 backend/cloudauditpro.db
@@ -13,6 +18,7 @@ backend/cloudauditpro.db
 # Node / Vite
 node_modules/
 dist/
+frontend/dist/
 frontend/node_modules/
 
 # Env files
@@ -20,10 +26,12 @@ frontend/node_modules/
 .env.*
 backend/.env
 frontend/.env
+frontend/.env.*
 
 # Build
 dist/
 build/
 
-# macOS
+# IDE
 .DS_Store
+.vscode/

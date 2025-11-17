@@ -1,7 +1,7 @@
 // frontend/src/ForgotPasswordPage.jsx
 import React, { useState } from "react";
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://api.cloudauditpro.app";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
