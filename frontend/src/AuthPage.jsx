@@ -4,9 +4,9 @@ import { useAuth } from "./AuthContext";
 export default function AuthPage() {
   const { login, register, error } = useAuth();
   const [mode, setMode] = useState("login"); // "login" | "signup"
-  const [name, setName] = useState("Sahil");
-  const [email, setEmail] = useState("sasewani@gmail.com");
-  const [password, setPassword] = useState("King7867!");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState("");
 
