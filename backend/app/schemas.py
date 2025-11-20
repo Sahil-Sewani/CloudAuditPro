@@ -1,8 +1,9 @@
 # backend/app/schemas.py
 from datetime import datetime
-from typing import List
-
+from typing import List, Literal, Optional
 from pydantic import BaseModel, EmailStr
+
+ComplianceStatus = Literal["PASS", "FAIL", "WARN"]
 
 
 # -------- User / Auth --------
@@ -60,3 +61,20 @@ class PasswordResetRequest(BaseModel):
 class PasswordResetConfirm(BaseModel):
     token: str
     new_password: str
+
+# -------- Compliance Scan Response --------
+
+class ComplianceCheckResult(BaseModel):
+    id: str
+    title: str
+    description: str
+    status: ComplianceStatus
+    score_weight: int  # how many points this check contributes
+    score_earned: int  # 0..score_weight
+    details: Optional[dict] = None
+
+class ComplianceSummary(BaseModel):
+    total_score: int
+    max_score: int
+    percentage: float
+    checks: List[ComplianceCheckResult]
