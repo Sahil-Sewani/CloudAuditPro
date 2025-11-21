@@ -8,6 +8,7 @@ from .db import Base, engine
 from .routers import auth, onboarding
 from typing import Any, Dict, List
 import boto3
+from html import escape
 
 
 from .aws import (
@@ -106,44 +107,290 @@ def scan(inp: ScanInput):
 
 @app.post("/report/email")
 def email_report(inp: ScanInput):
+    """
+    Send an HTML email that includes:
+      - Security Hub summary
+      - S3 security summary
+      - CloudTrail, Config, EBS, IAM status
+      - Helpful links & a 'View in CloudAuditPro' button
+    """
     try:
         # Assume role & clients
         creds = assume_customer_role(inp.account_id, inp.role_name)
-        sh = securityhub_client_from_creds(creds, inp.region)
+        region = inp.region
 
-        # Security Hub findings
+        # --- Security Hub ---
+        sh = securityhub_client_from_creds(creds, region)
         findings = list_findings(sh, inp.start_iso, inp.end_iso)
         sec_hub_text = build_summary(findings)
 
-        # S3 summary (new)
-        s3_summary = get_s3_security_summary(creds, inp.region)
-        s3_text = render_s3_section(
-            {
-                "total_buckets": len(s3_summary),
-                "public_buckets": sum(1 for b in s3_summary if b["public"]),
-                "unencrypted_buckets": sum(1 for b in s3_summary if not b["encryption_enabled"]),
-                "buckets": s3_summary,
-            }
+        # --- S3 summary ---
+        s3_list = get_s3_security_summary(creds, region)
+        s3_total = len(s3_list)
+        s3_public = sum(1 for b in s3_list if b["public"])
+        s3_unenc = sum(1 for b in s3_list if not b["encryption_enabled"])
+
+        # --- CloudTrail ---
+        ct = get_cloudtrail_status(creds, region)
+        ct_ok = bool(ct.get("has_trail")) and bool(ct.get("multi_region_trail"))
+
+        # --- Config ---
+        cfg = get_config_status(creds, region)
+        cfg_ok = bool(cfg.get("recorder_configured")) and bool(
+            cfg.get("recording_enabled")
         )
 
-        body_text = f"{sec_hub_text}\n{s3_text}"
+        # --- EBS encryption ---
+        ebs = get_ebs_encryption_status(creds, region)
+        ebs_ok = bool(ebs.get("default_encryption_enabled")) and len(
+            ebs.get("unencrypted_volume_ids", [])
+        ) == 0
 
+        # --- IAM password policy ---
+        iam_policy = get_iam_password_policy_status(creds, region)
+        iam_ok = bool(iam_policy.get("policy_present"))
+
+        # ---------- Plain-text fallback ----------
+        s3_text = (
+            f"=== S3 Security Summary ===\n"
+            f"Buckets: {s3_total}  |  Public: {s3_public}  |  Unencrypted: {s3_unenc}\n"
+        )
+        ct_text = (
+            "=== CloudTrail ===\n"
+            f"Status: {'PASS' if ct_ok else 'FAIL'}; "
+            f"has_trail={ct.get('has_trail')}, "
+            f"multi_region={ct.get('multi_region_trail')}, "
+            f"trail_count={ct.get('trail_count')}\n"
+        )
+        cfg_text = (
+            "=== AWS Config ===\n"
+            f"Status: {'PASS' if cfg_ok else 'FAIL'}; "
+            f"recorder_configured={cfg.get('recorder_configured')}, "
+            f"recording_enabled={cfg.get('recording_enabled')}\n"
+        )
+        ebs_text = (
+            "=== EBS Encryption ===\n"
+            f"Status: {'PASS' if ebs_ok else 'FAIL'}; "
+            f"default_encryption_enabled={ebs.get('default_encryption_enabled')}, "
+            f"total_volumes={ebs.get('total_volumes')}, "
+            f"unencrypted_volume_ids={ebs.get('unencrypted_volume_ids')}\n"
+        )
+        iam_text = (
+            "=== IAM Password Policy ===\n"
+            f"Status: {'PASS' if iam_ok else 'FAIL'}; "
+            f"policy_present={iam_policy.get('policy_present')}\n"
+        )
+
+        body_text = (
+            f"{sec_hub_text}\n\n"
+            f"{s3_text}\n"
+            f"{ct_text}\n"
+            f"{cfg_text}\n"
+            f"{ebs_text}\n"
+            f"{iam_text}"
+        )
+
+        # ---------- HTML body with purple / dark design ----------
+        def status_label(ok: bool) -> str:
+            return "✅ Pass" if ok else "❌ Failing"
+
+        view_url = f"{frontend_origin}/?account_id={inp.account_id}&region={region}"
+
+        s3_console_url = (
+            f"https://{region}.console.aws.amazon.com/s3/home?region={region}#"
+        )
+        ct_console_url = (
+            f"https://{region}.console.aws.amazon.com/cloudtrail/home?region={region}#/trails"
+        )
+        cfg_console_url = (
+            f"https://{region}.console.aws.amazon.com/config/home?region={region}#/getting-started"
+        )
+        ebs_console_url = (
+            f"https://{region}.console.aws.amazon.com/ec2/home?region={region}#EBSEncryption:"
+        )
+        iam_console_url = "https://console.aws.amazon.com/iam/home#/account_settings"
+
+        body_html = f"""\
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>CloudAuditPro – Weekly AWS Security Report</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#020617;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="600" cellspacing="0" cellpadding="0" style="width:100%;max-width:600px;border-radius:16px;background:linear-gradient(135deg,#1e1b4b,#020617);color:#e5e7eb;padding:24px;box-shadow:0 10px 40px rgba(15,23,42,0.9);">
+            <tr>
+              <td align="center" style="padding-bottom:16px;">
+                <div style="font-size:20px;font-weight:700;color:#a855f7;">CloudAuditPro</div>
+                <div style="font-size:12px;color:#c4b5fd;">AWS Security &amp; Compliance Snapshot</div>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding-bottom:20px;">
+                <a href="{view_url}" style="display:inline-block;padding:10px 18px;border-radius:999px;background-color:#4f46e5;color:#f9fafb;font-size:12px;font-weight:600;text-decoration:none;">
+                  View in CloudAuditPro
+                </a>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="background-color:rgba(15,23,42,0.9);border-radius:12px;padding:16px;margin-bottom:12px;">
+                <div style="font-size:14px;font-weight:600;margin-bottom:4px;">Weekly AWS Security Summary</div>
+                <div style="font-size:12px;color:#cbd5f5;">
+                  Total findings: <strong>{len(findings)}</strong>
+                </div>
+              </td>
+            </tr>
+
+            <tr>
+              <td style="height:8px;"></td>
+            </tr>
+
+            <tr>
+              <td style="background-color:rgba(15,23,42,0.95);border-radius:12px;padding:16px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:6px;">Security Hub details</div>
+                <pre style="font-size:11px;line-height:1.5;color:#e5e7eb;white-space:pre-wrap;margin:0;">{escape(sec_hub_text)}</pre>
+              </td>
+            </tr>
+
+            <tr><td style="height:12px;"></td></tr>
+
+            <tr>
+              <td style="background-color:rgba(15,23,42,0.95);border-radius:12px;padding:16px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:4px;">S3 Security</div>
+                <div style="font-size:12px;color:#e5e7eb;margin-bottom:4px;">
+                  Buckets: <strong>{s3_total}</strong> • Public: <strong>{s3_public}</strong> • Unencrypted: <strong>{s3_unenc}</strong>
+                </div>
+                <div style="font-size:11px;color:#cbd5f5;margin-bottom:8px;">
+                  {escape("No obviously risky buckets detected." if s3_public == 0 and s3_unenc == 0 else "Review public or unencrypted buckets and lock them down.")}
+                </div>
+                <a href="{s3_console_url}" style="font-size:11px;color:#a5b4fc;text-decoration:none;">Open S3 console →</a>
+              </td>
+            </tr>
+
+            <tr><td style="height:12px;"></td></tr>
+
+            <tr>
+              <td style="background-color:rgba(15,23,42,0.95);border-radius:12px;padding:16px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:4px;">
+                  CloudTrail <span style="margin-left:8px;font-size:11px;">{status_label(ct_ok)}</span>
+                </div>
+                <div style="font-size:11px;color:#e5e7eb;margin-bottom:6px;">
+                  has_trail: <strong>{ct.get("has_trail")}</strong> • multi_region_trail: <strong>{ct.get("multi_region_trail")}</strong> • trail_count: <strong>{ct.get("trail_count")}</strong>
+                </div>
+                <div style="font-size:11px;color:#cbd5f5;margin-bottom:6px;">
+                  {escape("Best practice: Use a multi-region trail that logs to a dedicated security/audit bucket.")}
+                </div>
+                <div style="font-size:11px;">
+                  <a href="{ct_console_url}" style="color:#a5b4fc;text-decoration:none;margin-right:12px;">View in CloudTrail console →</a>
+                  <a href="https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-create-and-update-a-trail.html" style="color:#e5e7eb;text-decoration:none;">CloudTrail docs →</a>
+                </div>
+              </td>
+            </tr>
+
+            <tr><td style="height:12px;"></td></tr>
+
+            <tr>
+              <td style="background-color:rgba(15,23,42,0.95);border-radius:12px;padding:16px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:4px;">
+                  AWS Config <span style="margin-left:8px;font-size:11px;">{status_label(cfg_ok)}</span>
+                </div>
+                <div style="font-size:11px;color:#e5e7eb;margin-bottom:6px;">
+                  recorder_configured: <strong>{cfg.get("recorder_configured")}</strong> • recording_enabled: <strong>{cfg.get("recording_enabled")}</strong>
+                </div>
+                <div style="font-size:11px;color:#cbd5f5;margin-bottom:6px;">
+                  {escape("Enable a configuration recorder for all resources and send data to a central bucket.")}
+                </div>
+                <div style="font-size:11px;">
+                  <a href="{cfg_console_url}" style="color:#a5b4fc;text-decoration:none;margin-right:12px;">View in Config console →</a>
+                  <a href="https://docs.aws.amazon.com/config/latest/developerguide/setting-up-aws-config.html" style="color:#e5e7eb;text-decoration:none;">AWS Config docs →</a>
+                </div>
+              </td>
+            </tr>
+
+            <tr><td style="height:12px;"></td></tr>
+
+            <tr>
+              <td style="background-color:rgba(15,23,42,0.95);border-radius:12px;padding:16px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:4px;">
+                  EBS Encryption <span style="margin-left:8px;font-size:11px;">{status_label(ebs_ok)}</span>
+                </div>
+                <div style="font-size:11px;color:#e5e7eb;margin-bottom:6px;">
+                  default_encryption_enabled: <strong>{ebs.get("default_encryption_enabled")}</strong> • total_volumes: <strong>{ebs.get("total_volumes")}</strong> • unencrypted_volume_ids: <strong>{", ".join(ebs.get("unencrypted_volume_ids") or [])}</strong>
+                </div>
+                <div style="font-size:11px;color:#cbd5f5;margin-bottom:6px;">
+                  {escape("Turn on default EBS encryption and migrate any unencrypted volumes via snapshot/restore.")}
+                </div>
+                <div style="font-size:11px;">
+                  <a href="{ebs_console_url}" style="color:#a5b4fc;text-decoration:none;margin-right:12px;">View EBS settings →</a>
+                  <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EBSEncryption.html" style="color:#e5e7eb;text-decoration:none;">EBS encryption docs →</a>
+                </div>
+              </td>
+            </tr>
+
+            <tr><td style="height:12px;"></td></tr>
+
+            <tr>
+              <td style="background-color:rgba(15,23,42,0.95);border-radius:12px;padding:16px;">
+                <div style="font-size:13px;font-weight:600;margin-bottom:4px;">
+                  IAM Password Policy <span style="margin-left:8px;font-size:11px;">{status_label(iam_ok)}</span>
+                </div>
+                <div style="font-size:11px;color:#e5e7eb;margin-bottom:6px;">
+                  policy_present: <strong>{iam_policy.get("policy_present")}</strong>
+                </div>
+                <div style="font-size:11px;color:#cbd5f5;margin-bottom:6px;">
+                  {escape("Enforce a strong password policy (length ≥ 12, complexity, reuse prevention).")}
+                </div>
+                <div style="font-size:11px;">
+                  <a href="{iam_console_url}" style="color:#a5b4fc;text-decoration:none;margin-right:12px;">View IAM account settings →</a>
+                  <a href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_passwords_account-policy.html" style="color:#e5e7eb;text-decoration:none;">IAM password policy docs →</a>
+                </div>
+              </td>
+            </tr>
+
+            <tr><td style="height:16px;"></td></tr>
+
+            <tr>
+              <td align="center" style="font-size:10px;color:#6b7280;">
+                Generated by CloudAuditPro • Account {escape(inp.account_id)} • Region {escape(region)}
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+"""
+
+        # ---------- Send with SES ----------
         to_addr = inp.email_to or TEST_TO
         if not (SES_FROM and to_addr):
-            raise HTTPException(status_code=400, detail="SES_FROM_ADDRESS or recipient missing")
+            raise HTTPException(
+                status_code=400, detail="SES_FROM_ADDRESS or recipient missing"
+            )
 
         ses = boto3.client("ses", region_name=REGION)
         ses.send_email(
             Source=SES_FROM,
             Destination={"ToAddresses": [to_addr]},
             Message={
-                "Subject": {"Data": "Weekly AWS Security Report"},
-                "Body": {"Text": {"Data": body_text}},
+                "Subject": {"Data": "Weekly AWS Security Report", "Charset": "UTF-8"},
+                "Body": {
+                    "Text": {"Data": body_text, "Charset": "UTF-8"},
+                    "Html": {"Data": body_html, "Charset": "UTF-8"},
+                },
             },
         )
-        return {"sent_to": to_addr, "length": len(body_text)}
+
+        return {"sent_to": to_addr, "length": len(body_html)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 

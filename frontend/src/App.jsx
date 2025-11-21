@@ -18,7 +18,11 @@ export default function App({ user, onLogout }) {
   const [configResult, setConfigResult] = useState(null);
   const [ebsResult, setEbsResult] = useState(null);
   const [iamResult, setIamResult] = useState(null);
+
   const [complianceSummary, setComplianceSummary] = useState(null);
+  const [previousComplianceSummary, setPreviousComplianceSummary] =
+    useState(null);
+  const [recentlyFixed, setRecentlyFixed] = useState([]);
 
   // --------- Loading + error ----------
   const [loadingScan, setLoadingScan] = useState(false);
@@ -31,6 +35,9 @@ export default function App({ user, onLogout }) {
   const [loadingCompliance, setLoadingCompliance] = useState(false);
   const [error, setError] = useState("");
 
+  // Details panel tab: "overview" | "recentlyFixed"
+  const [detailsTab, setDetailsTab] = useState("overview");
+
   const hasAccountConfig = accountId && roleName && region;
 
   const commonBody = {
@@ -39,34 +46,144 @@ export default function App({ user, onLogout }) {
     region: region,
   };
 
-  // --------- Helpers ----------
-  const refreshComplianceSummary = async () => {
-    if (!hasAccountConfig) return;
-    try {
-      setLoadingCompliance(true);
-      const data = await apiFetch("/compliance/summary", {
-        token,
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(commonBody),
-      });
-      setComplianceSummary(data);
-    } catch (err) {
-      console.error("Compliance summary error:", err);
-    } finally {
-      setLoadingCompliance(false);
-    }
+  // --------- Helpers for "Recently fixed" ----------
+
+  const CONTROL_METADATA = {
+    security_hub: {
+      title: "Security Hub findings reduced",
+      description:
+        "You reduced or cleared Security Hub findings. Your high-level risk posture is improving.",
+    },
+    s3_baseline: {
+      title: "S3 public access & encryption fixed",
+      description:
+        "You removed public/unsecured S3 buckets or enabled encryption. Data exposure risk is lower.",
+    },
+    cloudtrail: {
+      title: "CloudTrail multi-region trail enabled",
+      description:
+        "You now have a multi-region CloudTrail trail. You’ll have better visibility for investigations.",
+    },
+    config: {
+      title: "AWS Config recorder enabled",
+      description:
+        "You enabled an AWS Config recorder. Configuration changes will now be tracked over time.",
+    },
+    ebs_encryption: {
+      title: "EBS default encryption enforced",
+      description:
+        "Default EBS encryption is on and unencrypted volumes are addressed. Disk data is safer at rest.",
+    },
+    iam_password_policy: {
+      title: "IAM password policy configured",
+      description:
+        "You configured an IAM password policy. Weak-password risk is reduced across IAM users.",
+    },
   };
 
-  // Optionally auto-refresh when account fields change
+  function diffRecentlyFixed(oldSummary, newSummary) {
+    if (!oldSummary || !oldSummary.checks || !newSummary?.checks) return [];
+
+    const oldMap = {};
+    oldSummary.checks.forEach((c) => {
+      if (c.id) oldMap[c.id] = c;
+    });
+
+    const fixed = [];
+    newSummary.checks.forEach((c) => {
+      if (!c.id) return;
+      const old = oldMap[c.id];
+      if (!old) return;
+
+      // went from failing -> passing
+      if (!old.passed && c.passed) {
+        const meta = CONTROL_METADATA[c.id] || {};
+        fixed.push({
+          id: c.id,
+          label: c.label || meta.title || "Control",
+          title: meta.title || c.label || "Control",
+          description:
+            meta.description ||
+            "This control was failing before and is now passing.",
+        });
+      }
+    });
+
+    return fixed;
+  }
+
+  // --------- Compliance helpers ----------
+  const score = complianceSummary ? complianceSummary.score ?? 0 : 0;
+
+  const totalChecks = complianceSummary ? complianceSummary.total_checks ?? 0 : 0;
+
+  const scorePercent =
+    totalChecks > 0 ? Math.round((score / 100) * 100) : Math.round(score);
+
+  const controls =
+    complianceSummary?.checks ||
+    complianceSummary?.controls ||
+    complianceSummary?.breakdown ||
+    [];
+
+  const statusBadge = (status, passed) => {
+    // For compatibility: some objects might store "passed" boolean instead of status string
+    if (typeof passed === "boolean") {
+      if (passed) {
+        return (
+          <span className="inline-flex items-center text-emerald-400 text-xs">
+            <span className="mr-1">✅</span> Passing
+          </span>
+        );
+      }
+      return (
+        <span className="inline-flex items-center text-red-400 text-xs">
+          <span className="mr-1">❌</span> Failing
+        </span>
+      );
+    }
+
+    const normalized = (status || "").toLowerCase();
+    if (normalized === "pass" || normalized === "ok" || normalized === "good") {
+      return (
+        <span className="inline-flex items-center text-emerald-400 text-xs">
+          <span className="mr-1">✅</span> Passing
+        </span>
+      );
+    }
+    if (normalized === "warn" || normalized === "partial") {
+      return (
+        <span className="inline-flex items-center text-amber-400 text-xs">
+          <span className="mr-1">⚠️</span> Needs attention
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center text-red-400 text-xs">
+        <span className="mr-1">❌</span> Failing
+      </span>
+    );
+  };
+
+  const hasComplianceRun = !!complianceSummary;
+  const complianceButtonLabel = hasComplianceRun
+    ? "Refresh score"
+    : "Run compliance score";
+
+  // --------- Effects ----------
+
+  // Reset state when account configuration changes
   useEffect(() => {
-    setComplianceSummary(null);
     setScanResult(null);
     setS3Summary(null);
     setCloudTrailResult(null);
     setConfigResult(null);
     setEbsResult(null);
     setIamResult(null);
+    setComplianceSummary(null);
+    setPreviousComplianceSummary(null);
+    setRecentlyFixed([]);
+    setDetailsTab("overview");
   }, [accountId, roleName, region]);
 
   // --------- Action handlers ----------
@@ -75,7 +192,6 @@ export default function App({ user, onLogout }) {
     setLoadingScan(true);
     setError("");
     setScanResult(null);
-
     try {
       const data = await apiFetch("/scan", {
         token,
@@ -84,7 +200,6 @@ export default function App({ user, onLogout }) {
         body: JSON.stringify(commonBody),
       });
       setScanResult(data);
-      await refreshComplianceSummary();
     } catch (err) {
       console.error("Scan error:", err);
       setError(err.message || "Scan failed");
@@ -108,7 +223,6 @@ export default function App({ user, onLogout }) {
         }),
       });
       alert(`Report sent to: ${data.sent_to}`);
-      await refreshComplianceSummary();
     } catch (err) {
       console.error("Email report error:", err);
       setError(err.message || "Email send failed");
@@ -130,7 +244,6 @@ export default function App({ user, onLogout }) {
         body: JSON.stringify(commonBody),
       });
       setS3Summary(data);
-      await refreshComplianceSummary();
     } catch (err) {
       console.error("S3 summary error:", err);
       setError(err.message || "S3 summary failed");
@@ -152,7 +265,6 @@ export default function App({ user, onLogout }) {
         body: JSON.stringify(commonBody),
       });
       setCloudTrailResult(data);
-      await refreshComplianceSummary();
     } catch (err) {
       console.error("CloudTrail check error:", err);
       setError(err.message || "CloudTrail check failed");
@@ -174,7 +286,6 @@ export default function App({ user, onLogout }) {
         body: JSON.stringify(commonBody),
       });
       setConfigResult(data);
-      await refreshComplianceSummary();
     } catch (err) {
       console.error("Config check error:", err);
       setError(err.message || "Config check failed");
@@ -196,7 +307,6 @@ export default function App({ user, onLogout }) {
         body: JSON.stringify(commonBody),
       });
       setEbsResult(data);
-      await refreshComplianceSummary();
     } catch (err) {
       console.error("EBS check error:", err);
       setError(err.message || "EBS encryption check failed");
@@ -218,7 +328,6 @@ export default function App({ user, onLogout }) {
         body: JSON.stringify(commonBody),
       });
       setIamResult(data);
-      await refreshComplianceSummary();
     } catch (err) {
       console.error("IAM password policy error:", err);
       setError(err.message || "IAM password policy check failed");
@@ -227,54 +336,57 @@ export default function App({ user, onLogout }) {
     }
   };
 
-  const handleRefreshScore = async () => {
+  const handleRunOrRefreshScore = async () => {
+    if (!hasAccountConfig) return;
+
     setError("");
-    await refreshComplianceSummary();
-  };
+    setLoadingCompliance(true);
+    try {
+      const oldSummary = complianceSummary;
+      const data = await apiFetch("/compliance/summary", {
+        token,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(commonBody),
+      });
 
-  // --------- Compliance helpers ----------
-  const score = complianceSummary
-    ? complianceSummary.score ?? complianceSummary.total_score ?? 0
-    : 0;
+      setPreviousComplianceSummary(oldSummary || null);
+      setComplianceSummary(data);
 
-  const maxPoints = complianceSummary
-    ? complianceSummary.max_points ?? complianceSummary.max_score ?? 100
-    : 100;
-
-  const scorePercent = maxPoints ? Math.round((score / maxPoints) * 100) : 0;
-
-  const controls =
-    complianceSummary?.controls || complianceSummary?.breakdown || [];
-
-  const statusBadge = (status) => {
-    const normalized = (status || "").toLowerCase();
-    if (normalized === "pass" || normalized === "ok" || normalized === "good") {
-      return (
-        <span className="inline-flex items-center text-emerald-400 text-xs">
-          <span className="mr-1">✅</span> Passing
-        </span>
-      );
+      const fixed = diffRecentlyFixed(oldSummary, data);
+      if (fixed.length > 0) {
+        setRecentlyFixed((prev) => {
+          const combined = [...fixed, ...prev];
+          // Optional: cap to last 10 items
+          const seen = new Set();
+          const deduped = [];
+          for (const item of combined) {
+            if (seen.has(item.id)) continue;
+            seen.add(item.id);
+            deduped.push(item);
+            if (deduped.length >= 10) break;
+          }
+          return deduped;
+        });
+        setDetailsTab("recentlyFixed");
+      }
+    } catch (err) {
+      console.error("Compliance summary error:", err);
+      setError(err.message || "Compliance score failed");
+    } finally {
+      setLoadingCompliance(false);
     }
-    if (normalized === "warn" || normalized === "partial") {
-      return (
-        <span className="inline-flex items-center text-amber-400 text-xs">
-          <span className="mr-1">⚠️</span> Needs attention
-        </span>
-      );
-    }
-    return (
-      <span className="inline-flex items-center text-red-400 text-xs">
-        <span className="mr-1">❌</span> Failing
-      </span>
-    );
   };
 
   // --------- Fix guidance builder ----------
   const guidanceItems = [];
 
-  // S3 guidance
+  // S3 guidance (based on S3 summary results)
   if (s3Summary) {
-    if (s3Summary.public_buckets > 0 || s3Summary.unencrypted_buckets > 0) {
+    if (
+      s3Summary.public_buckets > 0 ||
+      s3Summary.unencrypted_buckets > 0
+    ) {
       guidanceItems.push({
         id: "s3-security",
         title: "Harden S3 bucket security",
@@ -439,138 +551,161 @@ export default function App({ user, onLogout }) {
 
       <main className="flex-1 flex justify-center p-6">
         <div className="w-full max-w-6xl grid md:grid-cols-2 gap-6">
-          {/* LEFT: Account + Actions */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 shadow-lg">
-            <h2 className="text-lg font-semibold mb-1 text-indigo-300">
-              Account &amp; Actions
-            </h2>
-            <p className="text-gray-400 mb-6 text-sm">
-              Configure your AWS account and run checks. Each action updates the
-              Compliance Score and Fix guidance.
-            </p>
+          {/* LEFT: Account + Actions + Reporting */}
+          <div className="space-y-4">
+            {/* Account & Actions card */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 shadow-lg">
+              <h2 className="text-lg font-semibold mb-1 text-indigo-300">
+                Account &amp; Actions
+              </h2>
+              <p className="text-gray-400 mb-6 text-sm">
+                Configure your AWS account and run checks. Each check updates
+                the details and Fix guidance on the right.
+              </p>
 
-            <label className="block mb-3 text-sm">
-              AWS Account ID
-              <input
-                className="mt-1 w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                value={accountId}
-                onChange={(e) => setAccountId(e.target.value)}
-                placeholder="123456789012"
-              />
-            </label>
+              <label className="block mb-3 text-sm">
+                AWS Account ID
+                <input
+                  className="mt-1 w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  value={accountId}
+                  onChange={(e) => setAccountId(e.target.value)}
+                  placeholder="123456789012"
+                />
+              </label>
 
-            <label className="block mb-3 text-sm">
-              IAM Role Name
-              <input
-                className="mt-1 w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm"
-                value={roleName}
-                onChange={(e) => setRoleName(e.target.value)}
-              />
-              <span className="text-xs text-gray-500">
-                This should match the role from your CloudFormation template.
-              </span>
-            </label>
+              <label className="block mb-3 text-sm">
+                IAM Role Name
+                <input
+                  className="mt-1 w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm"
+                  value={roleName}
+                  onChange={(e) => setRoleName(e.target.value)}
+                />
+                <span className="text-xs text-gray-500">
+                  This should match the role from your CloudFormation template.
+                </span>
+              </label>
 
-            <label className="block mb-3 text-sm">
-              AWS Region
-              <input
-                className="mt-1 w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm"
-                value={region}
-                onChange={(e) => setRegion(e.target.value)}
-                placeholder="us-east-1"
-              />
-            </label>
+              <label className="block mb-5 text-sm">
+                AWS Region
+                <input
+                  className="mt-1 w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm"
+                  value={region}
+                  onChange={(e) => setRegion(e.target.value)}
+                  placeholder="us-east-1"
+                />
+              </label>
 
-            <label className="block mb-5 text-sm">
-              Email (optional, for report)
-              <input
-                className="mt-1 w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm"
-                value={emailTo}
-                onChange={(e) => setEmailTo(e.target.value)}
-                placeholder="you@gmail.com"
-              />
-            </label>
+              {error && (
+                <div className="bg-red-500/10 border border-red-600 text-red-200 text-xs rounded p-3 mb-4">
+                  {error}
+                </div>
+              )}
 
-            {error && (
-              <div className="bg-red-500/10 border border-red-600 text-red-200 text-xs rounded p-3 mb-4">
-                {error}
+              <h3 className="text-sm font-semibold text-gray-300 mb-2">
+                Checks
+              </h3>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <button
+                  onClick={handleScan}
+                  disabled={loadingScan || !hasAccountConfig}
+                  className="bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
+                >
+                  {loadingScan ? "Running scan..." : "Run scan"}
+                </button>
+                <button
+                  onClick={handleS3Summary}
+                  disabled={loadingS3 || !hasAccountConfig}
+                  className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
+                >
+                  {loadingS3 ? "Checking S3..." : "S3 security"}
+                </button>
+
+                <button
+                  onClick={handleCloudTrail}
+                  disabled={loadingCloudTrail || !hasAccountConfig}
+                  className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
+                >
+                  {loadingCloudTrail ? "Checking..." : "CloudTrail"}
+                </button>
+
+                <button
+                  onClick={handleConfig}
+                  disabled={loadingConfig || !hasAccountConfig}
+                  className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
+                >
+                  {loadingConfig ? "Checking..." : "Config"}
+                </button>
+
+                <button
+                  onClick={handleEbs}
+                  disabled={loadingEbs || !hasAccountConfig}
+                  className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
+                >
+                  {loadingEbs ? "Checking..." : "EBS encryption"}
+                </button>
+
+                <button
+                  onClick={handleIam}
+                  disabled={loadingIam || !hasAccountConfig}
+                  className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
+                >
+                  {loadingIam ? "Checking..." : "IAM password policy"}
+                </button>
               </div>
-            )}
 
-            <h3 className="text-sm font-semibold text-gray-300 mb-2">
-              Actions
-            </h3>
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <button
-                onClick={handleScan}
-                disabled={loadingScan || !hasAccountConfig}
-                className="bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
-              >
-                {loadingScan ? "Running scan..." : "Run scan"}
-              </button>
-              <button
-                onClick={handleS3Summary}
-                disabled={loadingS3 || !hasAccountConfig}
-                className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
-              >
-                {loadingS3 ? "Checking S3..." : "S3 security"}
-              </button>
-
-              <button
-                onClick={handleEmailReport}
-                disabled={loadingEmail || !hasAccountConfig}
-                className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
-              >
-                {loadingEmail ? "Sending..." : "Email report"}
-              </button>
-              <button
-                onClick={handleCloudTrail}
-                disabled={loadingCloudTrail || !hasAccountConfig}
-                className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
-              >
-                {loadingCloudTrail ? "Checking..." : "CloudTrail"}
-              </button>
-
-              <button
-                onClick={handleConfig}
-                disabled={loadingConfig || !hasAccountConfig}
-                className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
-              >
-                {loadingConfig ? "Checking..." : "Config"}
-              </button>
-              <button
-                onClick={handleEbs}
-                disabled={loadingEbs || !hasAccountConfig}
-                className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
-              >
-                {loadingEbs ? "Checking..." : "EBS encryption"}
-              </button>
-
-              <button
-                onClick={handleIam}
-                disabled={loadingIam || !hasAccountConfig}
-                className="bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
-              >
-                {loadingIam ? "Checking..." : "IAM password policy"}
-              </button>
-              <button
-                onClick={handleRefreshScore}
-                disabled={loadingCompliance || !hasAccountConfig}
-                className="bg-gray-900 hover:bg-gray-800 disabled:opacity-50 text-gray-200 px-4 py-2 rounded text-sm border border-gray-700"
-              >
-                {loadingCompliance ? "Refreshing..." : "Refresh score"}
-              </button>
+              <p className="text-xs text-gray-500 mt-2">
+                Tip: Make sure your IAM role trust policy allows your app
+                account and that Security Hub, CloudTrail, and Config are
+                enabled in the selected region. Some checks may require
+                additional AWS services (which can incur cost).
+              </p>
             </div>
 
-            <p className="text-xs text-gray-500 mt-2">
-              Tip: Make sure your IAM role trust policy allows your app account
-              and that Security Hub, CloudTrail, and Config are enabled in the
-              selected region. Some checks may require additional AWS services
-              (which can incur cost).
-            </p>
+            {/* Reporting & Score card */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 shadow-lg">
+              <h2 className="text-lg font-semibold mb-1 text-indigo-300">
+                Reporting &amp; Score
+              </h2>
+              <p className="text-gray-400 mb-4 text-sm">
+                Email yourself a report and run/refresh the overall compliance
+                score.
+              </p>
+
+              <label className="block mb-4 text-sm">
+                Report email (optional)
+                <input
+                  className="mt-1 w-full bg-gray-950 border border-gray-700 rounded px-3 py-2 text-sm"
+                  value={emailTo}
+                  onChange={(e) => setEmailTo(e.target.value)}
+                  placeholder="you@gmail.com"
+                />
+                <span className="text-xs text-gray-500">
+                  Leave blank to use your account email, if supported.
+                </span>
+              </label>
+
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={handleEmailReport}
+                  disabled={loadingEmail || !hasAccountConfig}
+                  className="bg-gray-700 hover:bg-gray-600 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
+                >
+                  {loadingEmail ? "Sending..." : "Email report"}
+                </button>
+                <button
+                  onClick={handleRunOrRefreshScore}
+                  disabled={loadingCompliance || !hasAccountConfig}
+                  className="bg-gray-900 hover:bg-gray-800 disabled:opacity-50 text-gray-200 px-4 py-2 rounded text-sm border border-gray-700"
+                >
+                  {loadingCompliance
+                    ? "Calculating..."
+                    : complianceButtonLabel}
+                </button>
+              </div>
+            </div>
           </div>
 
-          {/* RIGHT: Compliance + Details + Guidance */}
+          {/* RIGHT: Compliance + Details */}
           <div className="space-y-4">
             {/* Compliance Score */}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
@@ -580,23 +715,31 @@ export default function App({ user, onLogout }) {
                     Compliance Score
                   </h2>
                   <p className="text-xs text-gray-400">
-                    Based on latest checks
+                    Based on latest compliance run
                   </p>
                 </div>
                 <div className="text-right">
                   <div className="text-2xl font-bold text-emerald-400">
-                    {scorePercent}%
+                    {hasComplianceRun ? `${scorePercent}%` : "--"}
                   </div>
-                  <div className="text-xs text-gray-400">
-                    ({score.toFixed(1)} / {maxPoints.toFixed(1)} points)
-                  </div>
+                  {hasComplianceRun && (
+                    <div className="text-xs text-gray-400">
+                      {`Checks passed: ${
+                        complianceSummary.passed_checks
+                      } / ${totalChecks || 0}`}
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div className="w-full h-2 rounded-full bg-gray-800 overflow-hidden mb-3">
                 <div
                   className="h-full bg-emerald-500 transition-all"
-                  style={{ width: `${Math.min(scorePercent, 100)}%` }}
+                  style={{
+                    width: hasComplianceRun
+                      ? `${Math.min(scorePercent, 100)}%`
+                      : "0%",
+                  }}
                 />
               </div>
 
@@ -611,407 +754,462 @@ export default function App({ user, onLogout }) {
                         {c.label || c.name || "Control"}
                       </span>
                       <div className="flex items-center gap-2">
-                        {statusBadge(c.status)}
-                        {typeof c.points === "number" &&
-                          typeof c.max_points === "number" && (
-                            <span className="text-gray-500">
-                              {c.points}/{c.max_points}
-                            </span>
-                          )}
+                        {statusBadge(c.status, c.passed)}
                       </div>
                     </div>
                   ))}
                 </div>
               ) : (
                 <p className="text-xs text-gray-500">
-                  Run some checks on the left to populate your control
+                  Run the compliance score on the left to populate your control
                   breakdown.
                 </p>
               )}
             </div>
 
-            {/* Details & Guidance */}
+            {/* Details & Guidance with tabs */}
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 overflow-auto">
-              <h2 className="text-lg font-semibold mb-3 text-indigo-300">
-                Details
-              </h2>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-lg font-semibold text-indigo-300">
+                  Details
+                </h2>
+                <div className="flex gap-2 text-xs">
+                  <button
+                    onClick={() => setDetailsTab("overview")}
+                    className={`px-2 py-1 rounded ${
+                      detailsTab === "overview"
+                        ? "bg-indigo-600 text-white"
+                        : "bg-gray-800 text-gray-300"
+                    }`}
+                  >
+                    Overview
+                  </button>
+                  <button
+                    onClick={() => setDetailsTab("recentlyFixed")}
+                    className={`px-2 py-1 rounded ${
+                      detailsTab === "recentlyFixed"
+                        ? "bg-emerald-600 text-white"
+                        : "bg-gray-800 text-gray-300"
+                    }`}
+                  >
+                    Recently fixed
+                  </button>
+                </div>
+              </div>
 
-              {!scanResult &&
-                !s3Summary &&
-                !cloudTrailResult &&
-                !configResult &&
-                !ebsResult &&
-                !iamResult && (
-                  <p className="text-gray-400 text-sm mb-4">
-                    No results yet. Run a scan or one of the individual checks
-                    on the left to see details and remediation guidance here.
-                  </p>
-                )}
-
-              {/* Security Hub */}
-              {scanResult && (
-                <section className="mb-5">
-                  <h3 className="text-sm font-semibold text-gray-200 mb-1">
-                    Security Hub scan
-                  </h3>
-                  <p className="text-xs text-gray-400 mb-1">
-                    Findings:{" "}
-                    <span className="text-gray-200 font-mono">
-                      {scanResult.count}
-                    </span>
-                  </p>
-                  <div className="text-xs text-gray-300 bg-black/50 rounded p-3 whitespace-pre-wrap font-mono">
-                    {scanResult.summary}
-                  </div>
-                  <p className="text-[11px] text-gray-500 mt-1">
-                    Tip: Security Hub aggregates findings from multiple AWS
-                    services. Use this as your high-level risk overview.
-                  </p>
-                </section>
-              )}
-
-              {/* S3 Security */}
-              {s3Summary && (
-                <section className="mb-5">
-                  <h3 className="text-sm font-semibold text-gray-200 mb-1">
-                    S3 Security
-                  </h3>
-                  <p className="text-xs text-gray-300 mb-2">
-                    Buckets:{" "}
-                    <span className="font-mono">
-                      {s3Summary.total_buckets}
-                    </span>{" "}
-                    • Public:{" "}
-                    <span className="font-mono">
-                      {s3Summary.public_buckets}
-                    </span>{" "}
-                    • Unencrypted:{" "}
-                    <span className="font-mono">
-                      {s3Summary.unencrypted_buckets}
-                    </span>
-                  </p>
-                  <ul className="text-xs text-gray-300 space-y-1 max-h-32 overflow-auto">
-                    {s3Summary.buckets.map((b) => (
-                      <li
-                        key={b.bucket}
-                        className="flex justify-between border-b border-gray-800/60 pb-1"
-                      >
-                        <span>{b.bucket}</span>
-                        <span className="text-[11px] text-gray-400">
-                          {b.public ? "🌐 Public" : "🔒 Private"} •{" "}
-                          {b.encryption_enabled
-                            ? "🔐 Encrypted"
-                            : "⚠️ No encryption"}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                  {s3Summary.unencrypted_buckets > 0 && (
-                    <p className="text-[11px] text-amber-400 mt-2">
-                      Fix: Enable default bucket encryption and avoid public
-                      access unless strictly required.
-                    </p>
-                  )}
-                </section>
-              )}
-
-              {/* CloudTrail */}
-              {cloudTrailResult && (
-                <section className="mb-5">
-                  <h3 className="text-sm font-semibold text-gray-200 mb-1">
-                    CloudTrail
-                  </h3>
-                  {cloudTrailResult.has_trail ? (
-                    <>
-                      <p className="text-xs text-emerald-400 mb-1">
-                        ✅ CloudTrail is enabled.
+              {detailsTab === "overview" && (
+                <>
+                  {!scanResult &&
+                    !s3Summary &&
+                    !cloudTrailResult &&
+                    !configResult &&
+                    !ebsResult &&
+                    !iamResult && (
+                      <p className="text-gray-400 text-sm mb-4">
+                        No results yet. Run a scan or one of the individual
+                        checks on the left to see details and remediation
+                        guidance here.
                       </p>
-                      <p className="text-xs text-gray-300 mb-1">
-                        Trails configured:{" "}
+                    )}
+
+                  {/* Security Hub */}
+                  {scanResult && (
+                    <section className="mb-5">
+                      <h3 className="text-sm font-semibold text-gray-200 mb-1">
+                        Security Hub scan
+                      </h3>
+                      <p className="text-xs text-gray-400 mb-1">
+                        Findings:{" "}
+                        <span className="text-gray-200 font-mono">
+                          {scanResult.count}
+                        </span>
+                      </p>
+                      <div className="text-xs text-gray-300 bg-black/50 rounded p-3 whitespace-pre-wrap font-mono">
+                        {scanResult.summary}
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        Tip: Security Hub aggregates findings from multiple AWS
+                        services. Use this as your high-level risk overview.
+                      </p>
+                    </section>
+                  )}
+
+                  {/* S3 Security */}
+                  {s3Summary && (
+                    <section className="mb-5">
+                      <h3 className="text-sm font-semibold text-gray-200 mb-1">
+                        S3 Security
+                      </h3>
+                      <p className="text-xs text-gray-300 mb-2">
+                        Buckets:{" "}
                         <span className="font-mono">
-                          {cloudTrailResult.trail_count}
+                          {s3Summary.total_buckets}
                         </span>{" "}
-                        • Multi-region:{" "}
-                        {cloudTrailResult.multi_region_trail ? "Yes" : "No"}
+                        • Public:{" "}
+                        <span className="font-mono">
+                          {s3Summary.public_buckets}
+                        </span>{" "}
+                        • Unencrypted:{" "}
+                        <span className="font-mono">
+                          {s3Summary.unencrypted_buckets}
+                        </span>
                       </p>
-                      <p className="text-[11px] text-gray-500">
-                        Best practice: Use a multi-region trail that sends logs
-                        to a dedicated security/audit S3 bucket.
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-xs text-red-400 mb-1">
-                        ❌ CloudTrail not enabled.
-                      </p>
-                      <p className="text-xs text-gray-300 mb-1">
-                        CloudTrail records API activity in your AWS account.
-                        It&apos;s required for most compliance frameworks
-                        (SOC2, PCI, CIS, etc.).
-                      </p>
-                      <p className="text-[11px] text-gray-400 mb-1">
-                        Fix: Create a multi-region trail and send logs to an S3
-                        bucket in your log-archive account.
-                      </p>
-                      <a
-                        href="https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-create-and-update-a-trail.html"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] text-indigo-400 hover:underline"
-                      >
-                        Open AWS docs: Create a trail →
-                      </a>
-                    </>
+                      <ul className="text-xs text-gray-300 space-y-1 max-h-32 overflow-auto">
+                        {s3Summary.buckets.map((b) => (
+                          <li
+                            key={b.bucket}
+                            className="flex justify-between border-b border-gray-800/60 pb-1"
+                          >
+                            <span>{b.bucket}</span>
+                            <span className="text-[11px] text-gray-400">
+                              {b.public ? "🌐 Public" : "🔒 Private"} •{" "}
+                              {b.encryption_enabled
+                                ? "🔐 Encrypted"
+                                : "⚠️ No encryption"}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                      {s3Summary.unencrypted_buckets > 0 && (
+                        <p className="text-[11px] text-amber-400 mt-2">
+                          Fix: Enable default bucket encryption and avoid public
+                          access unless strictly required.
+                        </p>
+                      )}
+                    </section>
                   )}
-                </section>
-              )}
 
-              {/* Config */}
-              {configResult && (
-                <section className="mb-5">
-                  <h3 className="text-sm font-semibold text-gray-200 mb-1">
-                    AWS Config
-                  </h3>
-                  {configResult.recorder_configured &&
-                  configResult.recording_enabled ? (
-                    <>
-                      <p className="text-xs text-emerald-400 mb-1">
-                        ✅ AWS Config recorder is enabled.
-                      </p>
-                      <p className="text-xs text-gray-300 mb-1">
-                        Recorders configured:{" "}
-                        <span className="font-mono">
-                          {configResult.recorder_count}
-                        </span>
-                      </p>
-                      <p className="text-[11px] text-gray-500">
-                        Config tracks configuration changes over time. Use it
-                        with rules for continuous compliance.
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-xs text-red-400 mb-1">
-                        ❌ AWS Config is not fully enabled.
-                      </p>
-                      <p className="text-xs text-gray-300 mb-1">
-                        Config provides a history of resource configuration
-                        changes, which is essential for investigations and
-                        compliance evidence.
-                      </p>
-                      <p className="text-[11px] text-gray-400 mb-1">
-                        Fix: Create a configuration recorder and enable
-                        recording for all resources.
-                      </p>
-                      <a
-                        href="https://docs.aws.amazon.com/config/latest/developerguide/setting-up-aws-config.html"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] text-indigo-400 hover:underline"
-                      >
-                        Open AWS docs: Set up AWS Config →
-                      </a>
-                    </>
-                  )}
-                </section>
-              )}
-
-              {/* EBS Encryption */}
-              {ebsResult && (
-                <section className="mb-5">
-                  <h3 className="text-sm font-semibold text-gray-200 mb-1">
-                    EBS Encryption
-                  </h3>
-                  {ebsResult.default_encryption_enabled &&
-                  (!ebsResult.unencrypted_volume_ids ||
-                    ebsResult.unencrypted_volume_ids.length === 0) ? (
-                    <>
-                      <p className="text-xs text-emerald-400 mb-1">
-                        ✅ Default EBS encryption is enabled and no
-                        unencrypted volumes were detected.
-                      </p>
-                      <p className="text-xs text-gray-300 mb-1">
-                        Total volumes checked:{" "}
-                        <span className="font-mono">
-                          {ebsResult.total_volumes}
-                        </span>
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-xs text-red-400 mb-1">
-                        ❌ EBS encryption is not fully compliant.
-                      </p>
-                      <p className="text-xs text-gray-300 mb-1">
-                        Default encryption enabled:{" "}
-                        {ebsResult.default_encryption_enabled ? "Yes" : "No"}
-                        <br />
-                        Total volumes:{" "}
-                        <span className="font-mono">
-                          {ebsResult.total_volumes}
-                        </span>
-                      </p>
-                      {ebsResult.unencrypted_volume_ids &&
-                        ebsResult.unencrypted_volume_ids.length > 0 && (
-                          <p className="text-[11px] text-amber-400 mb-1">
-                            Unencrypted volumes:{" "}
-                            {ebsResult.unencrypted_volume_ids.join(", ")}
+                  {/* CloudTrail */}
+                  {cloudTrailResult && (
+                    <section className="mb-5">
+                      <h3 className="text-sm font-semibold text-gray-200 mb-1">
+                        CloudTrail
+                      </h3>
+                      {cloudTrailResult.has_trail ? (
+                        <>
+                          <p className="text-xs text-emerald-400 mb-1">
+                            ✅ CloudTrail is enabled.
                           </p>
-                        )}
-                      <p className="text-[11px] text-gray-400 mb-1">
-                        Fix: Enable default EBS encryption and migrate or
-                        snapshot/restore unencrypted volumes to encrypted
-                        ones.
-                      </p>
-                      <a
-                        href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EBSEncryption.html"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] text-indigo-400 hover:underline"
-                      >
-                        Open AWS docs: EBS encryption →
-                      </a>
-                    </>
+                          <p className="text-xs text-gray-300 mb-1">
+                            Trails configured:{" "}
+                            <span className="font-mono">
+                              {cloudTrailResult.trail_count}
+                            </span>{" "}
+                            • Multi-region:{" "}
+                            {cloudTrailResult.multi_region_trail
+                              ? "Yes"
+                              : "No"}
+                          </p>
+                          <p className="text-[11px] text-gray-500">
+                            Best practice: Use a multi-region trail that sends
+                            logs to a dedicated security/audit S3 bucket.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xs text-red-400 mb-1">
+                            ❌ CloudTrail not enabled.
+                          </p>
+                          <p className="text-xs text-gray-300 mb-1">
+                            CloudTrail records API activity in your AWS
+                            account. It&apos;s required for most compliance
+                            frameworks (SOC2, PCI, CIS, etc.).
+                          </p>
+                          <p className="text-[11px] text-gray-400 mb-1">
+                            Fix: Create a multi-region trail and send logs to an
+                            S3 bucket in your log-archive account.
+                          </p>
+                          <a
+                            href="https://docs.aws.amazon.com/awscloudtrail/latest/userguide/cloudtrail-create-and-update-a-trail.html"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] text-indigo-400 hover:underline"
+                          >
+                            Open AWS docs: Create a trail →
+                          </a>
+                        </>
+                      )}
+                    </section>
                   )}
-                </section>
+
+                  {/* Config */}
+                  {configResult && (
+                    <section className="mb-5">
+                      <h3 className="text-sm font-semibold text-gray-200 mb-1">
+                        AWS Config
+                      </h3>
+                      {configResult.recorder_configured &&
+                      configResult.recording_enabled ? (
+                        <>
+                          <p className="text-xs text-emerald-400 mb-1">
+                            ✅ AWS Config recorder is enabled.
+                          </p>
+                          <p className="text-xs text-gray-300 mb-1">
+                            Recorders configured:{" "}
+                            <span className="font-mono">
+                              {configResult.recorder_count}
+                            </span>
+                          </p>
+                          <p className="text-[11px] text-gray-500">
+                            Config tracks configuration changes over time. Use
+                            it with rules for continuous compliance.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xs text-red-400 mb-1">
+                            ❌ AWS Config is not fully enabled.
+                          </p>
+                          <p className="text-xs text-gray-300 mb-1">
+                            Config provides a history of resource configuration
+                            changes, which is essential for investigations and
+                            compliance evidence.
+                          </p>
+                          <p className="text-[11px] text-gray-400 mb-1">
+                            Fix: Create a configuration recorder and enable
+                            recording for all resources.
+                          </p>
+                          <a
+                            href="https://docs.aws.amazon.com/config/latest/developerguide/setting-up-aws-config.html"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] text-indigo-400 hover:underline"
+                          >
+                            Open AWS docs: Set up AWS Config →
+                          </a>
+                        </>
+                      )}
+                    </section>
+                  )}
+
+                  {/* EBS Encryption */}
+                  {ebsResult && (
+                    <section className="mb-5">
+                      <h3 className="text-sm font-semibold text-gray-200 mb-1">
+                        EBS Encryption
+                      </h3>
+                      {ebsResult.default_encryption_enabled &&
+                      (!ebsResult.unencrypted_volume_ids ||
+                        ebsResult.unencrypted_volume_ids.length === 0) ? (
+                        <>
+                          <p className="text-xs text-emerald-400 mb-1">
+                            ✅ Default EBS encryption is enabled and no
+                            unencrypted volumes were detected.
+                          </p>
+                          <p className="text-xs text-gray-300 mb-1">
+                            Total volumes checked:{" "}
+                            <span className="font-mono">
+                              {ebsResult.total_volumes}
+                            </span>
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xs text-red-400 mb-1">
+                            ❌ EBS encryption is not fully compliant.
+                          </p>
+                          <p className="text-xs text-gray-300 mb-1">
+                            Default encryption enabled:{" "}
+                            {ebsResult.default_encryption_enabled
+                              ? "Yes"
+                              : "No"}
+                            <br />
+                            Total volumes:{" "}
+                            <span className="font-mono">
+                              {ebsResult.total_volumes}
+                            </span>
+                          </p>
+                          {ebsResult.unencrypted_volume_ids &&
+                            ebsResult.unencrypted_volume_ids.length > 0 && (
+                              <p className="text-[11px] text-amber-400 mb-1">
+                                Unencrypted volumes:{" "}
+                                {ebsResult.unencrypted_volume_ids.join(", ")}
+                              </p>
+                            )}
+                          <p className="text-[11px] text-gray-400 mb-1">
+                            Fix: Enable default EBS encryption and migrate or
+                            snapshot/restore unencrypted volumes to encrypted
+                            ones.
+                          </p>
+                          <a
+                            href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/EBSEncryption.html"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] text-indigo-400 hover:underline"
+                          >
+                            Open AWS docs: EBS encryption →
+                          </a>
+                        </>
+                      )}
+                    </section>
+                  )}
+
+                  {/* IAM Password Policy */}
+                  {iamResult && (
+                    <section className="mb-5">
+                      <h3 className="text-sm font-semibold text-gray-200 mb-1">
+                        IAM Password Policy
+                      </h3>
+                      {iamResult.policy_present ? (
+                        <>
+                          <p className="text-xs text-emerald-400 mb-1">
+                            ✅ An IAM password policy is configured.
+                          </p>
+                          <p className="text-xs text-gray-300 mb-1">
+                            Min length:{" "}
+                            <span className="font-mono">
+                              {iamResult.minimum_password_length}
+                            </span>
+                            {" • "}
+                            Requires symbols:{" "}
+                            {iamResult.require_symbols ? "Yes" : "No"}
+                            {" • "}
+                            Requires numbers:{" "}
+                            {iamResult.require_numbers ? "Yes" : "No"}
+                          </p>
+                          <p className="text-[11px] text-gray-500">
+                            Best practice: Enforce strong length (≥ 12), require
+                            symbols/numbers, and enable password reuse
+                            prevention.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-xs text-red-400 mb-1">
+                            ❌ No IAM password policy detected.
+                          </p>
+                          <p className="text-xs text-gray-300 mb-1">
+                            Without a password policy, users can set weak
+                            passwords, which is a common compliance failure.
+                          </p>
+                          <p className="text-[11px] text-gray-400 mb-1">
+                            Fix: Configure an IAM password policy with minimum
+                            length, complexity requirements, and rotation.
+                          </p>
+                          <a
+                            href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_passwords_account-policy.html"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[11px] text-indigo-400 hover:underline"
+                          >
+                            Open AWS docs: Set an account password policy →
+                          </a>
+                        </>
+                      )}
+                    </section>
+                  )}
+
+                  {/* Fix Guidance */}
+                  {anyResultsForGuidance && (
+                    <section className="mt-6 border-t border-gray-800 pt-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-sm font-semibold text-indigo-300">
+                          Fix guidance
+                        </h3>
+                        <span className="text-[11px] text-gray-500">
+                          Human-readable steps + cost notes
+                        </span>
+                      </div>
+
+                      {guidanceItems.length === 0 ? (
+                        <p className="text-xs text-emerald-400">
+                          All checks you&apos;ve run so far are passing. 🎉 Keep
+                          running additional checks as you expand your
+                          environment.
+                        </p>
+                      ) : (
+                        <div className="space-y-3">
+                          {guidanceItems.map((item) => (
+                            <div
+                              key={item.id}
+                              className="rounded-lg border border-gray-800 bg-black/40 p-3"
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <h4 className="text-xs font-semibold text-gray-100">
+                                  {item.title}
+                                </h4>
+                                <span className="text-[10px] text-amber-400">
+                                  Priority: High
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-gray-300 mb-1">
+                                {item.why}
+                              </p>
+                              <ul className="list-disc list-inside text-[11px] text-gray-300 space-y-0.5 mb-1.5">
+                                {item.how.map((step, idx) => (
+                                  <li key={idx}>{step}</li>
+                                ))}
+                              </ul>
+                              {item.costNote && (
+                                <p className="text-[10px] text-gray-400 mb-1">
+                                  <span className="font-semibold">
+                                    Cost note:{" "}
+                                  </span>
+                                  {item.costNote}
+                                </p>
+                              )}
+                              <div className="flex flex-wrap gap-2 mt-1">
+                                {item.consoleUrl && (
+                                  <a
+                                    href={item.consoleUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[11px] px-2 py-1 rounded border border-gray-700 bg-gray-900 hover:bg-gray-800 text-indigo-300"
+                                  >
+                                    View in AWS Console →
+                                  </a>
+                                )}
+                                {item.docsUrl && (
+                                  <a
+                                    href={item.docsUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-[11px] px-2 py-1 rounded border border-gray-700 bg-gray-900 hover:bg-gray-800 text-gray-300"
+                                  >
+                                    Open AWS docs →
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
+                  )}
+                </>
               )}
 
-              {/* IAM Password Policy */}
-              {iamResult && (
-                <section className="mb-5">
-                  <h3 className="text-sm font-semibold text-gray-200 mb-1">
-                    IAM Password Policy
-                  </h3>
-                  {iamResult.policy_present ? (
-                    <>
-                      <p className="text-xs text-emerald-400 mb-1">
-                        ✅ An IAM password policy is configured.
-                      </p>
-                      <p className="text-xs text-gray-300 mb-1">
-                        Min length:{" "}
-                          <span className="font-mono">
-                            {iamResult.minimum_password_length}
-                          </span>
-                        {" • "}
-                        Requires symbols:{" "}
-                        {iamResult.require_symbols ? "Yes" : "No"}
-                        {" • "}
-                        Requires numbers:{" "}
-                        {iamResult.require_numbers ? "Yes" : "No"}
-                      </p>
-                      <p className="text-[11px] text-gray-500">
-                        Best practice: Enforce strong length (≥ 12), require
-                        symbols/numbers, and enable password reuse prevention.
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-xs text-red-400 mb-1">
-                        ❌ No IAM password policy detected.
-                      </p>
-                      <p className="text-xs text-gray-300 mb-1">
-                        Without a password policy, users can set weak passwords,
-                        which is a common compliance failure.
-                      </p>
-                      <p className="text-[11px] text-gray-400 mb-1">
-                        Fix: Configure an IAM password policy with minimum
-                        length, complexity requirements, and rotation.
-                      </p>
-                      <a
-                        href="https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_passwords_account-policy.html"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] text-indigo-400 hover:underline"
-                      >
-                        Open AWS docs: Set an account password policy →
-                      </a>
-                    </>
-                  )}
-                </section>
-              )}
-
-              {/* Fix Guidance */}
-              {anyResultsForGuidance && (
-                <section className="mt-6 border-t border-gray-800 pt-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <h3 className="text-sm font-semibold text-indigo-300">
-                      Fix guidance
-                    </h3>
-                    <span className="text-[11px] text-gray-500">
-                      Human-readable steps + cost notes
-                    </span>
-                  </div>
-
-                  {guidanceItems.length === 0 ? (
-                    <p className="text-xs text-emerald-400">
-                      All checks you&apos;ve run so far are passing. 🎉 Keep
-                      running additional checks as you expand your environment.
+              {detailsTab === "recentlyFixed" && (
+                <section>
+                  {recentlyFixed.length === 0 ? (
+                    <p className="text-xs text-gray-400">
+                      Nothing has been marked as recently fixed yet. Try running
+                      the compliance score, fix an issue (like IAM password
+                      policy), and then run the score again.
                     </p>
                   ) : (
                     <div className="space-y-3">
-                      {guidanceItems.map((item) => (
+                      {recentlyFixed.map((item) => (
                         <div
                           key={item.id}
-                          className="rounded-lg border border-gray-800 bg-black/40 p-3"
+                          className="rounded-lg border border-emerald-700 bg-emerald-900/10 p-3"
                         >
                           <div className="flex items-center justify-between mb-1">
-                            <h4 className="text-xs font-semibold text-gray-100">
+                            <h4 className="text-xs font-semibold text-emerald-300">
                               {item.title}
                             </h4>
-                            <span className="text-[10px] text-amber-400">
-                              Priority: High
+                            <span className="inline-flex items-center text-[11px] text-emerald-300">
+                              <span className="mr-1">✅</span> Recently fixed
                             </span>
                           </div>
-                          <p className="text-[11px] text-gray-300 mb-1">
-                            {item.why}
+                          <p className="text-[11px] text-gray-200">
+                            {item.description}
                           </p>
-                          <ul className="list-disc list-inside text-[11px] text-gray-300 space-y-0.5 mb-1.5">
-                            {item.how.map((step, idx) => (
-                              <li key={idx}>{step}</li>
-                            ))}
-                          </ul>
-                          {item.costNote && (
-                            <p className="text-[10px] text-gray-400 mb-1">
-                              <span className="font-semibold">Cost note: </span>
-                              {item.costNote}
-                            </p>
-                          )}
-                          <div className="flex flex-wrap gap-2 mt-1">
-                            {item.consoleUrl && (
-                              <a
-                                href={item.consoleUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-[11px] px-2 py-1 rounded border border-gray-700 bg-gray-900 hover:bg-gray-800 text-indigo-300"
-                              >
-                                View in AWS Console →
-                              </a>
-                            )}
-                            {item.docsUrl && (
-                              <a
-                                href={item.docsUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-[11px] px-2 py-1 rounded border border-gray-700 bg-gray-900 hover:bg-gray-800 text-gray-300"
-                              >
-                                Open AWS docs →
-                              </a>
-                            )}
-                          </div>
                         </div>
                       ))}
                     </div>
                   )}
                 </section>
-              )}
-
-              {/* Optional “simulated environment” hint */}
-              {!anyResultsForGuidance && (
-                <p className="mt-4 text-[11px] text-gray-500">
-                  Not ready to enable CloudTrail or Config in a real account?
-                  You can still demo CloudAuditPro using a low-risk test account
-                  or by walking through the guidance cards during a screen share.
-                </p>
               )}
             </div>
           </div>
