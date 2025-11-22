@@ -6,6 +6,8 @@ import { AuthProvider, useAuth } from "./AuthContext.jsx";
 import AuthPage from "./AuthPage.jsx";
 import ForgotPasswordPage from "./ForgotPasswordPage.jsx";
 import ResetPasswordPage from "./ResetPasswordPage.jsx";
+import AboutPage from "./AboutPage.jsx";
+import AboutPage from "./AboutPage.jsx";
 
 function Root() {
   const { token, user, loading, logout } = useAuth();
@@ -34,6 +36,9 @@ if (path.startsWith("/reset-password")) {
   app = <ResetPasswordPage />;
 } else if (path.startsWith("/forgot-password")) {
   app = <ForgotPasswordPage />;
+} else if (path.startsWith("/about")) {
+  // Public About page (no auth required)
+  app = <AboutPage />;
 } else {
   app = (
     <AuthProvider>
