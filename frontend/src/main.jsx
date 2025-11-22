@@ -7,7 +7,6 @@ import AuthPage from "./AuthPage.jsx";
 import ForgotPasswordPage from "./ForgotPasswordPage.jsx";
 import ResetPasswordPage from "./ResetPasswordPage.jsx";
 import AboutPage from "./AboutPage.jsx";
-import AboutPage from "./AboutPage.jsx";
 
 function Root() {
   const { token, user, loading, logout } = useAuth();
