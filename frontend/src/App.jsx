@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "./AuthContext";
 import { apiFetch } from "./apiClient";
+import GlowDot from "./GlowDot";
+
+const APP_VERSION = import.meta.env.VITE_APP_VERSION || "v0.1.0";
 
 export default function App({ user, onLogout }) {
   const { token } = useAuth();
@@ -595,15 +598,27 @@ export default function App({ user, onLogout }) {
 
       {/* Top bar */}
       <header className="w-full border-b border-indigo-900/60 px-6 py-3 flex items-center justify-between bg-black/40 backdrop-blur">
-        <div className="flex items-center gap-2">
-          <span className="text-xl font-bold text-indigo-400">
-            CloudAuditPro
-          </span>
-          <span className="text-xs text-indigo-200/70">
-            • AWS Security &amp; Compliance Dashboard
-          </span>
+        <div className="flex items-center gap-3">
+          <GlowDot size={16} />
+          <div className="flex items-center gap-2">
+            <span className="text-xl font-bold tracking-tight text-indigo-300">
+              CloudAuditPro
+            </span>
+            <span className="text-[10px] md:text-xs text-indigo-200/80 border border-indigo-500/40 rounded-full px-2 py-0.5">
+              v{APP_VERSION}
+            </span>
+            <span className="hidden md:inline text-xs text-indigo-200/70">
+              • AWS Security &amp; Compliance Dashboard
+            </span>
+          </div>
         </div>
         <div className="flex items-center gap-4 text-sm">
+          <a
+            href="/about"
+            className="text-xs md:text-sm text-indigo-200 hover:text-white underline-offset-4 hover:underline"
+          >
+            About
+          </a>
           {isSyncing && (
             <div className="flex items-center gap-2 text-[11px] text-amber-300">
               <span className="relative flex h-3 w-3">
@@ -628,6 +643,8 @@ export default function App({ user, onLogout }) {
           )}
         </div>
       </header>
+
+
 
       <main className="flex-1 flex justify-center p-6">
         <div className="w-full max-w-6xl grid md:grid-cols-2 gap-6">

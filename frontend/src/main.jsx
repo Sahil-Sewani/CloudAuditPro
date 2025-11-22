@@ -1,3 +1,4 @@
+// frontend/src/main.jsx
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
@@ -20,10 +21,11 @@ function Root() {
   }
 
   if (!token) {
+    // When user hits /app and is not logged in, show login/signup
     return <AuthPage />;
   }
 
-  // You can pass user/logout into App if you want to show user info in header
+  // Logged in → show dashboard
   return <App user={user} onLogout={logout} />;
 }
 
@@ -31,19 +33,24 @@ function Root() {
 const path = window.location.pathname;
 
 let app;
+
 if (path.startsWith("/reset-password")) {
   app = <ResetPasswordPage />;
 } else if (path.startsWith("/forgot-password")) {
   app = <ForgotPasswordPage />;
-} else if (path.startsWith("/about")) {
-  // Public About page (no auth required)
+} else if (path === "/" || path.startsWith("/about")) {
+  // Marketing/landing page
   app = <AboutPage />;
-} else {
+} else if (path.startsWith("/app")) {
+  // Actual product app (login + dashboard behind auth)
   app = (
     <AuthProvider>
       <Root />
     </AuthProvider>
   );
+} else {
+  // Fallback: send unknown routes to landing
+  app = <AboutPage />;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(
