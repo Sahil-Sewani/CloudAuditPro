@@ -2,22 +2,33 @@
 import React from "react";
 
 export default function GlowDot({ size = 14 }) {
-  const outer = size;
-  const inner = size - 4;
+  // Outer wrapper size
+  const wrapper = size;
+  const core = size * 0.65;
 
   return (
     <span
-      className="relative inline-flex items-center justify-center"
-      style={{ width: outer, height: outer }}
+      className="relative flex items-center justify-center"
+      style={{ width: wrapper, height: wrapper }}
     >
-      {/* Outer glow / ping */}
-      <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400/70 blur-md opacity-70 animate-pulse" />
+      {/* Softer, slower pulse */}
+      <span
+        className="absolute rounded-full bg-emerald-400 blur-md animate-[ping_2.2s_cubic-bezier(0.22,0.61,0.36,1)_infinite]"
+        style={{
+          width: wrapper,
+          height: wrapper,
+          opacity: 0.45,
+        }}
+      />
+
       {/* Core dot */}
       <span
-        className="relative inline-flex rounded-full bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.9)]"
-        style={{ width: inner, height: inner }}
+        className="relative rounded-full bg-emerald-400 shadow-[0_0_22px_rgba(52,211,153,0.9)]"
+        style={{
+          width: core,
+          height: core,
+        }}
       />
     </span>
   );
 }
-
