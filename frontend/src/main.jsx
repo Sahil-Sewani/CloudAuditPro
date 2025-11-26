@@ -8,6 +8,8 @@ import AuthPage from "./AuthPage.jsx";
 import ForgotPasswordPage from "./ForgotPasswordPage.jsx";
 import ResetPasswordPage from "./ResetPasswordPage.jsx";
 import AboutPage from "./AboutPage.jsx";
+import SecurityPage from "./SecurityPage.jsx";
+import HowItWorksPage from "./HowItWorksPage.jsx";
 
 function Root() {
   const { token, user, loading, logout } = useAuth();
@@ -41,6 +43,10 @@ if (path.startsWith("/reset-password")) {
 } else if (path === "/" || path.startsWith("/about")) {
   // Marketing/landing page
   app = <AboutPage />;
+} else if (path.startsWith("/security")) {
+  app = <SecurityPage />;
+} else if (path.startsWith("/how-it-works")) {
+  app = <HowItWorksPage />;
 } else if (path.startsWith("/app")) {
   // Actual product app (login + dashboard behind auth)
   app = (

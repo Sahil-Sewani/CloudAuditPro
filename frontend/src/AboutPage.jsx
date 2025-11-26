@@ -46,17 +46,43 @@ export default function AboutPage() {
       {/* Top bar */}
       <header className="w-full border-b border-indigo-900/60 px-6 py-3 flex items-center justify-between bg-black/40 backdrop-blur">
         <div className="flex items-center gap-3">
-          <span className="text-lg md:text-xl font-bold tracking-tight text-indigo-300">
-            CloudAuditPro
-          </span>
-          <span className="text-[10px] md:text-xs text-indigo-200/80 border border-indigo-500/40 rounded-full px-2 py-0.5">
-            v{APP_VERSION}
-          </span>
-          <span className="hidden md:inline text-xs text-indigo-200/70">
-            • AWS Security &amp; Compliance Platform
-          </span>
+          <GlowDot size={14} />
+          <div className="flex items-center gap-2">
+            <span className="text-lg md:text-xl font-bold tracking-tight text-indigo-300">
+              CloudAuditPro
+            </span>
+            <span className="text-[10px] md:text-xs text-indigo-200/80 border border-indigo-500/40 rounded-full px-2 py-0.5">
+              v{APP_VERSION}
+            </span>
+            <span className="hidden md:inline text-xs text-indigo-200/70">
+              • AWS Security &amp; Compliance Platform
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-3 text-xs md:text-sm">
+
+        <div className="flex items-center gap-4 text-xs md:text-sm">
+          {/* Simple marketing nav */}
+          <nav className="hidden sm:flex items-center gap-4">
+            <a
+              href="/"
+              className="text-indigo-100 hover:text-white underline-offset-4 hover:underline"
+            >
+              About
+            </a>
+            <a
+              href="/security"
+              className="text-indigo-200 hover:text-white underline-offset-4 hover:underline"
+            >
+              Security
+            </a>
+            <a
+              href="/how-it-works"
+              className="text-indigo-200 hover:text-white underline-offset-4 hover:underline"
+            >
+              How it works
+            </a>
+          </nav>
+
           <button
             onClick={() => {
               window.location.href = "/app";
@@ -73,11 +99,10 @@ export default function AboutPage() {
         <section className="grid lg:grid-cols-[1.4fr,1fr] gap-8 items-center">
           {/* Left: Hero copy */}
           <div>
-          <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/50 bg-indigo-950/60 px-3 py-1 text-[11px] text-indigo-100 mb-4">
-            <GlowDot size={14} />
-            <span>Trusted AWS security intelligence, in one pane.</span>
-          </div>
-
+            <div className="inline-flex items-center gap-2 rounded-full border border-indigo-500/50 bg-indigo-950/60 px-3 py-1 text-[11px] text-indigo-100 mb-4">
+              <GlowDot size={14} />
+              <span>Trusted AWS security intelligence, in one pane.</span>
+            </div>
 
             <h1 className="text-2xl md:text-4xl lg:text-5xl font-semibold tracking-tight text-indigo-50 mb-4">
               Turning AWS noise into{" "}
@@ -88,10 +113,9 @@ export default function AboutPage() {
 
             <p className="text-sm md:text-base text-indigo-100/80 max-w-2xl mb-6">
               CloudAuditPro is an opinionated AWS security &amp; compliance
-              platform that surfaces the controls that matter most — and
-              shows you exactly how to fix them. Security Hub, S3, CloudTrail,
-              Config, EBS, and IAM, brought together in a single, human-readable
-              score.
+              platform that surfaces the controls that matter most — and shows
+              you exactly how to fix them. Security Hub, S3, CloudTrail, Config,
+              EBS, and IAM, brought together in a single, human-readable score.
             </p>
 
             <div className="grid sm:grid-cols-3 gap-4 mb-8">
@@ -230,9 +254,9 @@ export default function AboutPage() {
               Why teams adopt CloudAuditPro
             </h2>
             <p className="text-xs text-gray-300 mb-4">
-              CloudAuditPro exists to bridge the gap between raw AWS signals
-              and the conversations you need to have with leadership,
-              customers, and auditors.
+              CloudAuditPro exists to bridge the gap between raw AWS signals and
+              the conversations you need to have with leadership, customers, and
+              auditors.
             </p>
             <ul className="space-y-2 text-xs text-gray-300 list-disc list-inside">
               <li>Reduce hours spent screenshotting consoles for audit decks.</li>

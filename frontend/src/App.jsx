@@ -647,22 +647,44 @@ export default function App({ user, onLogout }) {
             </span>
           </div>
         </div>
+
         <div className="flex items-center gap-4 text-sm">
+          {/* Marketing / info links – open in new tab */}
           <a
             href="/about"
+            target="_blank"
+            rel="noreferrer"
             className="text-xs md:text-sm text-indigo-200 hover:text-white underline-offset-4 hover:underline"
           >
             About
           </a>
+          <a
+            href="/security"
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs md:text-sm text-indigo-200 hover:text-white underline-offset-4 hover:underline"
+          >
+            Security
+          </a>
+          <a
+            href="/how-it-works"
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs md:text-sm text-indigo-200 hover:text-white underline-offset-4 hover:underline"
+          >
+            How it works
+          </a>
+
           {isSyncing && (
             <div className="flex items-center gap-2 text-[11px] text-amber-300">
               <span className="relative flex h-3 w-3">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75 animate-ping"></span>
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-400"></span>
+                <span className="absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75 animate-ping" />
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-400" />
               </span>
               <span>System syncing checks…</span>
             </div>
           )}
+
           {user && (
             <span className="text-gray-200 hidden sm:inline">
               {user.email}
@@ -678,6 +700,7 @@ export default function App({ user, onLogout }) {
           )}
         </div>
       </header>
+
 
       {/* Main content */}
       <main className="flex-1 px-6 py-6">
