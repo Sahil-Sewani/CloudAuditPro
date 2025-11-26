@@ -8,7 +8,7 @@ const API_BASE =
   import.meta.env.VITE_API_BASE_URL || "https://api.cloudauditpro.app";
 
 // Max session lifetime in hours (front-end side)
-const MAX_SESSION_HOURS = 1;
+const MAX_SESSION_HOURS = 8; // ← set to 8 for production
 const SESSION_KEY = "cap_token";
 const SESSION_ISSUED_KEY = "cap_token_issued_at";
 
@@ -22,16 +22,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(!!token);
   const [error, setError] = useState("");
-
-  const clearSession = () => {
-    setToken(null);
-    setUser(null);
-    setError("");
-    setLoading(false);
-    setSessionIssuedAt(null);
-    localStorage.removeItem(SESSION_KEY);
-    localStorage.removeItem(SESSION_ISSUED_KEY);
-  };
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   // Helper: check if session is expired
   const isSessionExpired = () => {
@@ -40,15 +31,33 @@ export function AuthProvider({ children }) {
     return Date.now() - sessionIssuedAt > maxMs;
   };
 
+  const clearSession = (reason) => {
+    setToken(null);
+    setUser(null);
+    setError("");
+    setLoading(false);
+    setSessionIssuedAt(null);
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(SESSION_ISSUED_KEY);
+
+    if (reason === "expired") {
+      setSessionExpired(true);
+    } else {
+      setSessionExpired(false);
+    }
+  };
+
   // Check expiry on mount / when token or issuedAt changes
   useEffect(() => {
     if (!token) {
-      clearSession();
+      // No token → just ensure we're not "loading"
+      setUser(null);
+      setLoading(false);
       return;
     }
 
     if (isSessionExpired()) {
-      clearSession();
+      clearSession("expired");
       return;
     }
 
@@ -86,7 +95,7 @@ export function AuthProvider({ children }) {
 
     const interval = setInterval(() => {
       if (isSessionExpired()) {
-        clearSession();
+        clearSession("expired");
       }
     }, 60 * 1000); // check every 60s
 
@@ -96,6 +105,7 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     setError("");
+    setSessionExpired(false); // clear banner on successful login attempt
 
     const body = new URLSearchParams();
     body.append("username", email);
@@ -123,10 +133,12 @@ export function AuthProvider({ children }) {
     localStorage.setItem(SESSION_KEY, data.access_token);
     localStorage.setItem(SESSION_ISSUED_KEY, String(now));
     setError("");
+    setSessionExpired(false);
   };
 
   const register = async (name, email, password) => {
     setError("");
+    setSessionExpired(false);
 
     const res = await fetch(`${API_BASE}/auth/register`, {
       method: "POST",
@@ -149,15 +161,25 @@ export function AuthProvider({ children }) {
     localStorage.setItem(SESSION_KEY, data.access_token);
     localStorage.setItem(SESSION_ISSUED_KEY, String(now));
     setError("");
+    setSessionExpired(false);
   };
 
   const logout = () => {
-    clearSession();
+    clearSession("manual");
   };
 
   return (
     <AuthContext.Provider
-      value={{ token, user, loading, error, login, register, logout }}
+      value={{
+        token,
+        user,
+        loading,
+        error,
+        login,
+        register,
+        logout,
+        sessionExpired,
+      }}
     >
       {children}
     </AuthContext.Provider>

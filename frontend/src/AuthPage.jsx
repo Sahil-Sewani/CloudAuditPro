@@ -1,10 +1,11 @@
+// frontend/src/AuthPage.jsx
 import React, { useState } from "react";
 import { useAuth } from "./AuthContext";
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || "v0.1.0";
 
 export default function AuthPage() {
-  const { login, register, error } = useAuth();
+  const { login, register, error, sessionExpired } = useAuth();
   const [mode, setMode] = useState("login"); // "login" | "signup"
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -56,7 +57,7 @@ export default function AuthPage() {
       </header>
 
       <main className="flex-1 flex flex-col items-center justify-center px-4">
-        {/* Top pill / logo (kept, now reinforces brand) */}
+        {/* Top pill / logo */}
         <div className="mb-6 flex flex-col items-center gap-2">
           <div className="inline-flex items-center gap-2 rounded-full border border-purple-400/40 bg-black/70 px-4 py-1 shadow-lg shadow-purple-500/40">
             <span className="h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
@@ -71,6 +72,14 @@ export default function AuthPage() {
 
         {/* Main auth card */}
         <div className="w-full max-w-lg rounded-3xl bg-black/70 border border-purple-500/30 shadow-[0_0_120px_rgba(139,92,246,0.55)] backdrop-blur-xl p-8 sm:p-10">
+          {/* Session expired banner */}
+          {sessionExpired && (
+            <div className="mb-4 rounded-xl border border-amber-500/60 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+              Your session has expired for security reasons. Please log in
+              again to continue using CloudAuditPro.
+            </div>
+          )}
+
           {/* Tabs */}
           <div className="flex justify-center mb-6">
             <div className="inline-flex items-center bg-slate-900/80 rounded-full p-1">
