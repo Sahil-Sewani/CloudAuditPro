@@ -1,34 +1,22 @@
 // frontend/src/GlowDot.jsx
 import React from "react";
 
-export default function GlowDot({ size = 14 }) {
-  // Outer wrapper size
-  const wrapper = size;
-  const core = size * 0.65;
+export default function GlowDot({ size = 14, className = "" }) {
+  const px = typeof size === "number" ? `${size}px` : size;
 
   return (
     <span
-      className="relative flex items-center justify-center"
-      style={{ width: wrapper, height: wrapper }}
+      className={`relative inline-flex items-center justify-center ${className}`}
+      style={{ width: px, height: px }}
     >
-      {/* Softer, slower pulse */}
-      <span
-        className="absolute rounded-full bg-emerald-400 blur-md animate-[ping_2.2s_cubic-bezier(0.22,0.61,0.36,1)_infinite]"
-        style={{
-          width: wrapper,
-          height: wrapper,
-          opacity: 0.45,
-        }}
-      />
+      {/* Stronger outer pulse */}
+      <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400/70 blur-[3px] animate-ping" />
+
+      {/* Constant soft glow ring */}
+      <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400/30 blur-[7px]" />
 
       {/* Core dot */}
-      <span
-        className="relative rounded-full bg-emerald-400 shadow-[0_0_22px_rgba(52,211,153,0.9)]"
-        style={{
-          width: core,
-          height: core,
-        }}
-      />
+      <span className="relative inline-flex h-2/3 w-2/3 rounded-full bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.9)]" />
     </span>
   );
 }

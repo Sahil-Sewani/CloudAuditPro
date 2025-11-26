@@ -1,3 +1,4 @@
+// frontend/src/AuthContext.jsx
 import React, { createContext, useContext, useEffect, useState } from "react";
 
 const AuthContext = createContext(null);
@@ -6,23 +7,58 @@ const AuthContext = createContext(null);
 const API_BASE =
   import.meta.env.VITE_API_BASE_URL || "https://api.cloudauditpro.app";
 
+// Max session lifetime in hours (front-end side)
+const MAX_SESSION_HOURS = 1;
+const SESSION_KEY = "cap_token";
+const SESSION_ISSUED_KEY = "cap_token_issued_at";
+
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(() => localStorage.getItem("cap_token"));
+  const [token, setToken] = useState(() => localStorage.getItem(SESSION_KEY));
+  const [sessionIssuedAt, setSessionIssuedAt] = useState(() => {
+    const raw = localStorage.getItem(SESSION_ISSUED_KEY);
+    return raw ? Number(raw) : null;
+  });
+
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(!!token);
   const [error, setError] = useState("");
 
-  // Fetch /auth/me whenever token changes
+  const clearSession = () => {
+    setToken(null);
+    setUser(null);
+    setError("");
+    setLoading(false);
+    setSessionIssuedAt(null);
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(SESSION_ISSUED_KEY);
+  };
+
+  // Helper: check if session is expired
+  const isSessionExpired = () => {
+    if (!token || !sessionIssuedAt) return false;
+    const maxMs = MAX_SESSION_HOURS * 60 * 60 * 1000;
+    return Date.now() - sessionIssuedAt > maxMs;
+  };
+
+  // Check expiry on mount / when token or issuedAt changes
   useEffect(() => {
     if (!token) {
-      setUser(null);
-      localStorage.removeItem("cap_token");
-      setLoading(false);
+      clearSession();
       return;
     }
 
+    if (isSessionExpired()) {
+      clearSession();
+      return;
+    }
+
+    // Persist token + issuedAt if valid
+    localStorage.setItem(SESSION_KEY, token);
+    if (sessionIssuedAt) {
+      localStorage.setItem(SESSION_ISSUED_KEY, String(sessionIssuedAt));
+    }
+
     setLoading(true);
-    localStorage.setItem("cap_token", token);
 
     fetch(`${API_BASE}/auth/me`, {
       headers: {
@@ -31,16 +67,32 @@ export function AuthProvider({ children }) {
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
+        if (!data) {
+          clearSession();
+          return;
+        }
         setUser(data);
         setLoading(false);
       })
       .catch(() => {
-        setUser(null);
-        setToken(null);
-        localStorage.removeItem("cap_token");
-        setLoading(false);
+        clearSession();
       });
-  }, [token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, sessionIssuedAt]);
+
+  // Background interval to auto-logout when time passes while tab is open
+  useEffect(() => {
+    if (!token || !sessionIssuedAt) return;
+
+    const interval = setInterval(() => {
+      if (isSessionExpired()) {
+        clearSession();
+      }
+    }, 60 * 1000); // check every 60s
+
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, sessionIssuedAt]);
 
   const login = async (email, password) => {
     setError("");
@@ -65,7 +117,11 @@ export function AuthProvider({ children }) {
     }
 
     const data = await res.json();
+    const now = Date.now();
     setToken(data.access_token);
+    setSessionIssuedAt(now);
+    localStorage.setItem(SESSION_KEY, data.access_token);
+    localStorage.setItem(SESSION_ISSUED_KEY, String(now));
     setError("");
   };
 
@@ -87,14 +143,16 @@ export function AuthProvider({ children }) {
     }
 
     const data = await res.json();
+    const now = Date.now();
     setToken(data.access_token);
+    setSessionIssuedAt(now);
+    localStorage.setItem(SESSION_KEY, data.access_token);
+    localStorage.setItem(SESSION_ISSUED_KEY, String(now));
     setError("");
   };
 
   const logout = () => {
-    setToken(null);
-    setUser(null);
-    localStorage.removeItem("cap_token");
+    clearSession();
   };
 
   return (
@@ -109,4 +167,3 @@ export function AuthProvider({ children }) {
 export function useAuth() {
   return useContext(AuthContext);
 }
-
