@@ -20,7 +20,7 @@ load_dotenv()
 
 # ----------------- Config -----------------
 
-# JWT_SECRET = os.getenv("JWT_SECRET", "CHANGE_ME_IN_PROD")
+JWT_SECRET = os.getenv("JWT_SECRET", "CHANGE_ME_IN_PROD")
 APP_ENV = os.getenv("APP_ENV", "dev")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 hours
