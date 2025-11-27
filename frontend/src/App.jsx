@@ -24,6 +24,11 @@ export default function App({ user, onLogout }) {
   const [region, setRegion] = useState("us-east-1");
   const [emailTo, setEmailTo] = useState("");
 
+  // --------- Saved AWS accounts (multi-account) ----------
+  const [awsAccounts, setAwsAccounts] = useState([]);
+  const [selectedAwsAccountId, setSelectedAwsAccountId] = useState("");
+  const [loadingAwsAccounts, setLoadingAwsAccounts] = useState(false);
+
   // --------- Results / state ----------
   const [scanResult, setScanResult] = useState(null);
   const [s3Summary, setS3Summary] = useState(null);
@@ -87,6 +92,31 @@ export default function App({ user, onLogout }) {
     const timer = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  // --------- Fetch saved AWS accounts for this user ----------
+  useEffect(() => {
+    const fetchAwsAccounts = async () => {
+      if (!token) {
+        setAwsAccounts([]);
+        setSelectedAwsAccountId("");
+        return;
+      }
+      try {
+        setLoadingAwsAccounts(true);
+        const data = await apiFetch("/aws-accounts", {
+          token,
+          method: "GET",
+        });
+        setAwsAccounts(data || []);
+      } catch (err) {
+        console.error("Failed to load AWS accounts:", err);
+      } finally {
+        setLoadingAwsAccounts(false);
+      }
+    };
+
+    fetchAwsAccounts();
+  }, [token]);
 
   // --------- Helper: record "recently fixed" from status changes ----------
   const recordFixedChanges = (updates, sourceLabel) => {
@@ -421,6 +451,92 @@ export default function App({ user, onLogout }) {
     }
   };
 
+  // --------- Saved AWS accounts handlers ----------
+  const handleSelectAwsAccount = (e) => {
+    const id = e.target.value;
+    setSelectedAwsAccountId(id);
+
+    const acc = awsAccounts.find((a) => String(a.id) === String(id));
+    if (acc) {
+      setAccountId(acc.account_id || "");
+      setRoleName(acc.role_name || "CloudAuditProReadRole");
+      setRegion(acc.region || "us-east-1");
+    }
+  };
+
+  const saveCurrentAwsAccount = async () => {
+    if (!accountId) {
+      alert("Please enter an AWS Account ID before saving.");
+      return;
+    }
+    try {
+      const cleanAccountId = accountId.trim();
+      const cleanRoleName = (roleName || "CloudAuditProReadRole").trim();
+      const cleanRegion = (region || "us-east-1").trim();
+      const display_name = `${cleanAccountId} (${cleanRegion})`;
+
+      if (selectedAwsAccountId) {
+        // Update existing
+        const updated = await apiFetch(`/aws-accounts/${selectedAwsAccountId}`, {
+          token,
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            display_name,
+            account_id: cleanAccountId,
+            role_name: cleanRoleName,
+            region: cleanRegion,
+          }),
+        });
+
+        setAwsAccounts((prev) =>
+          prev.map((a) =>
+            String(a.id) === String(selectedAwsAccountId) ? updated : a
+          )
+        );
+      } else {
+        // Create new
+        const created = await apiFetch("/aws-accounts", {
+          token,
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            display_name,
+            account_id: cleanAccountId,
+            role_name: cleanRoleName,
+            region: cleanRegion,
+          }),
+        });
+
+        setAwsAccounts((prev) => [created, ...prev]);
+        setSelectedAwsAccountId(String(created.id));
+      }
+    } catch (err) {
+      console.error("Failed to save AWS account:", err);
+      alert(err.message || "Failed to save AWS account");
+    }
+  };
+
+  const deleteSelectedAwsAccount = async () => {
+    if (!selectedAwsAccountId) return;
+    if (!window.confirm("Delete this saved AWS account?")) return;
+
+    try {
+      await apiFetch(`/aws-accounts/${selectedAwsAccountId}`, {
+        token,
+        method: "DELETE",
+      });
+
+      setAwsAccounts((prev) =>
+        prev.filter((a) => String(a.id) !== String(selectedAwsAccountId))
+      );
+      setSelectedAwsAccountId("");
+    } catch (err) {
+      console.error("Failed to delete AWS account:", err);
+      alert(err.message || "Failed to delete AWS account");
+    }
+  };
+
   // --------- Compliance helpers ----------
   const score = complianceSummary ? complianceSummary.score ?? 0 : 0;
   const scorePercent = Math.round(score); // already 0–100 from backend
@@ -701,7 +817,6 @@ export default function App({ user, onLogout }) {
         </div>
       </header>
 
-
       {/* Main content */}
       <main className="flex-1 px-6 py-6">
         <div className="max-w-7xl mx-auto space-y-6">
@@ -849,7 +964,7 @@ export default function App({ user, onLogout }) {
                   </span>
                 </label>
 
-                <label className="block mb-5 text-sm">
+                <label className="block mb-3 text-sm">
                   AWS Region
                   <input
                     className="mt-1 w-full bg-slate-950/80 border border-indigo-800 rounded px-3 py-2 text-sm"
@@ -858,6 +973,65 @@ export default function App({ user, onLogout }) {
                     placeholder="us-east-1"
                   />
                 </label>
+
+                {/* Saved AWS accounts (multi-account support) */}
+                <div className="mt-1 mb-5 border border-slate-800 rounded-xl bg-slate-950/70 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold text-indigo-200">
+                      Saved AWS accounts
+                    </span>
+                    {awsAccounts.length > 0 && (
+                      <span className="text-[10px] text-slate-400">
+                        {awsAccounts.length} account
+                        {awsAccounts.length > 1 ? "s" : ""} stored
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <select
+                      className="flex-1 bg-slate-950/80 border border-indigo-800 rounded px-3 py-1.5 text-xs"
+                      value={selectedAwsAccountId}
+                      onChange={handleSelectAwsAccount}
+                    >
+                      <option value="">
+                        {loadingAwsAccounts
+                          ? "Loading accounts..."
+                          : awsAccounts.length === 0
+                          ? "No saved accounts yet"
+                          : "Select a saved account"}
+                      </option>
+                      {awsAccounts.map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.display_name || `${a.account_id} (${a.region})`}
+                        </option>
+                      ))}
+                    </select>
+
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={saveCurrentAwsAccount}
+                        className="px-3 py-1.5 rounded bg-indigo-500 hover:bg-indigo-600 text-[11px] text-white whitespace-nowrap"
+                      >
+                        Save current
+                      </button>
+                      <button
+                        type="button"
+                        onClick={deleteSelectedAwsAccount}
+                        disabled={!selectedAwsAccountId}
+                        className="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 disabled:opacity-40 text-[11px] text-slate-100 whitespace-nowrap"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="mt-2 text-[10px] text-slate-400">
+                    Saved AWS accounts are stored in your CloudAuditPro
+                    account and follow you across browsers and devices.
+                  </p>
+                </div>
 
                 {error && (
                   <div className="bg-red-500/10 border border-red-600 text-red-200 text-xs rounded p-3 mb-4">

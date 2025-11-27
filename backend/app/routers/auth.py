@@ -61,6 +61,7 @@ def login_user(
         )
 
     token = create_access_token({"sub": user.id})
+    print("DEBUG login: issuing token", token[:40], "...")  # dev-only debug
     return schemas.TokenResponse(access_token=token)
 
 

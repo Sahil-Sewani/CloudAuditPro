@@ -9,8 +9,8 @@ const API_BASE =
 
 // Max session lifetime in hours (front-end side)
 const MAX_SESSION_HOURS = 8; // ← set to 8 for production
-const SESSION_KEY = "cap_token";
-const SESSION_ISSUED_KEY = "cap_token_issued_at";
+const SESSION_KEY = "cap_token_v3";
+const SESSION_ISSUED_KEY = "cap_token_issued_at_v3";
 
 export function AuthProvider({ children }) {
   const [token, setToken] = useState(() => localStorage.getItem(SESSION_KEY));

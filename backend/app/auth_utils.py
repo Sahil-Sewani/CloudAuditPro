@@ -20,7 +20,8 @@ load_dotenv()
 
 # ----------------- Config -----------------
 
-JWT_SECRET = os.getenv("JWT_SECRET", "CHANGE_ME_IN_PROD")
+# JWT_SECRET = os.getenv("JWT_SECRET", "CHANGE_ME_IN_PROD")
+APP_ENV = os.getenv("APP_ENV", "dev")
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 hours
 RESET_TOKEN_TTL_HOURS = 1
@@ -123,6 +124,19 @@ async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> models.User:
+    # DEV MODE: skip JWT validation entirely, just return the first user
+    if APP_ENV == "dev":
+        print("DEBUG get_current_user: DEV mode – skipping JWT validation")
+        user = db.query(models.User).first()
+        if not user:
+            # In dev, if there is somehow no user, we still error
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="No users found in dev DB",
+            )
+        return user
+
+    # PROD/STAGE: real JWT validation
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -130,11 +144,13 @@ async def get_current_user(
     )
 
     try:
+        from jose import JWTError  # in case of circular imports, keep local
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         user_id: str | None = payload.get("sub")
         if user_id is None:
             raise credentials_exception
-    except JWTError:
+    except JWTError as e:
+        print("DEBUG get_current_user: JWTError while decoding:", repr(e))
         raise credentials_exception
 
     user = db.query(models.User).filter(models.User.id == user_id).first()

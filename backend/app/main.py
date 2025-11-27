@@ -1,12 +1,14 @@
 import os
 import stripe
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from .db import Base, engine
-from .routers import auth, onboarding
+from .routers import auth, onboarding, aws_accounts
 from typing import Any, Dict, List
+from .auth_utils import get_current_user
+from . import models
 import boto3
 from html import escape
 
@@ -58,6 +60,7 @@ Base.metadata.create_all(bind=engine)
 # Register routers
 app.include_router(auth.router)
 app.include_router(onboarding.router)
+app.include_router(aws_accounts.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -92,7 +95,10 @@ def health():
 
 
 @app.post("/scan")
-def scan(inp: ScanInput):
+def scan(
+    inp: ScanInput,
+    current_user: models.User = Depends(get_current_user),
+):
     try:
         creds = assume_customer_role(inp.account_id, inp.role_name)
         sh = securityhub_client_from_creds(creds, inp.region)
@@ -106,7 +112,10 @@ def scan(inp: ScanInput):
 
 
 @app.post("/report/email")
-def email_report(inp: ScanInput):
+def email_report(
+    inp: ScanInput,
+    current_user: models.User = Depends(get_current_user),
+):
     """
     Send an HTML email that includes:
       - Security Hub summary
@@ -395,7 +404,10 @@ def email_report(inp: ScanInput):
 
 
 @app.post("/aws/s3-summary")
-def s3_summary(inp: ScanInput):
+def s3_summary(
+    inp: ScanInput,
+    current_user: models.User = Depends(get_current_user),
+):
     try:
         creds = assume_customer_role(inp.account_id, inp.role_name)
         s3_summary = get_s3_security_summary(creds, inp.region)
@@ -413,7 +425,10 @@ def s3_summary(inp: ScanInput):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/checks/cloudtrail")
-def check_cloudtrail(inp: ScanInput):
+def check_cloudtrail(
+    inp: ScanInput,
+    current_user: models.User = Depends(get_current_user),
+):
     try:
         creds = assume_customer_role(inp.account_id, inp.role_name)
         status = get_cloudtrail_status(creds, inp.region)
@@ -423,7 +438,10 @@ def check_cloudtrail(inp: ScanInput):
 
 
 @app.post("/checks/config")
-def check_config(inp: ScanInput):
+def check_config(
+    inp: ScanInput,
+    current_user: models.User = Depends(get_current_user),
+):
     try:
         creds = assume_customer_role(inp.account_id, inp.role_name)
         status = get_config_status(creds, inp.region)
@@ -433,7 +451,10 @@ def check_config(inp: ScanInput):
 
 
 @app.post("/checks/iam-password-policy")
-def check_iam_password_policy(inp: ScanInput):
+def check_iam_password_policy(
+    inp: ScanInput,
+    current_user: models.User = Depends(get_current_user),
+):
     try:
         creds = assume_customer_role(inp.account_id, inp.role_name)
         status = get_iam_password_policy_status(creds, inp.region)
@@ -443,7 +464,10 @@ def check_iam_password_policy(inp: ScanInput):
 
 
 @app.post("/checks/ebs-encryption")
-def check_ebs_encryption(inp: ScanInput):
+def check_ebs_encryption(
+    inp: ScanInput,
+    current_user: models.User = Depends(get_current_user),
+):
     try:
         creds = assume_customer_role(inp.account_id, inp.role_name)
         status = get_ebs_encryption_status(creds, inp.region)
@@ -454,7 +478,10 @@ def check_ebs_encryption(inp: ScanInput):
 
 
 @app.post("/compliance/summary")
-def compliance_summary(inp: ScanInput):
+def compliance_summary(
+    inp: ScanInput,
+    current_user: models.User = Depends(get_current_user),
+):
     """
     Aggregate multiple controls into a single compliance score.
     Controls (equal weight):

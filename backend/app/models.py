@@ -27,6 +27,12 @@ class User(Base):
     # One org per user (for now)
     organization = relationship("Organization", back_populates="owner", uselist=False)
 
+    aws_accounts = relationship(
+        "AwsAccount",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
 
 class Organization(Base):
     __tablename__ = "organizations"
@@ -49,9 +55,11 @@ class AwsConnection(Base):
     account_id = Column(String, nullable=False)
     role_arn = Column(String, nullable=False)
     external_id = Column(String, nullable=False)
+    region = Column(String, nullable=False, default="us-east-1")  # 👈 NEW
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     organization = relationship("Organization", back_populates="aws_connections")
+
 
 
 class PasswordResetToken(Base):
@@ -65,3 +73,19 @@ class PasswordResetToken(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     user = relationship("User", backref="password_reset_tokens")
+
+
+class AwsAccount(Base):
+    __tablename__ = "aws_accounts"
+
+    id = Column(String, primary_key=True, default=uuid_str)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False)
+
+    display_name = Column(String, nullable=False)
+    account_id = Column(String, nullable=False)
+    role_name = Column(String, nullable=False)
+    region = Column(String, nullable=False, default="us-east-1")
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="aws_accounts")
