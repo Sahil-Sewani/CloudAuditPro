@@ -51,6 +51,16 @@ export default function App({ user, onLogout }) {
   // Toast for new fixes
   const [toast, setToast] = useState(null); // { label, via }
 
+  // AWS inventory
+  const [ec2Inventory, setEc2Inventory] = useState(null);
+  const [vpcInventory, setVpcInventory] = useState(null);
+  const [rdsInventory, setRdsInventory] = useState(null);
+
+  const [loadingEc2, setLoadingEc2] = useState(false);
+  const [loadingVpc, setLoadingVpc] = useState(false);
+  const [loadingRds, setLoadingRds] = useState(false);
+
+
   // --------- Loading + error ----------
   const [loadingScan, setLoadingScan] = useState(false);
   const [loadingEmail, setLoadingEmail] = useState(false);
@@ -80,7 +90,10 @@ export default function App({ user, onLogout }) {
     loadingConfig ||
     loadingEbs ||
     loadingIam ||
-    loadingCompliance;
+    loadingCompliance ||
+    loadingEc2 ||
+    loadingVpc ||
+    loadingRds;
 
   const markCheckRun = (id) => {
     setChecksRun((prev) => (prev.includes(id) ? prev : [...prev, id]));
@@ -216,6 +229,9 @@ export default function App({ user, onLogout }) {
     setLastCheckStatus({});
     setToast(null);
     setChecksRun([]);
+    setEc2Inventory(null);
+    setVpcInventory(null);
+    setRdsInventory(null);
   }, [accountId, roleName, region]);
 
   // --------- Action handlers ----------
@@ -450,6 +466,74 @@ export default function App({ user, onLogout }) {
       setLoadingIam(false);
     }
   };
+
+  // --------- AWS Inventory handlers ----------
+  const handleEc2Inventory = async () => {
+    setLoadingEc2(true);
+    setError("");
+    setEc2Inventory(null);
+
+    try {
+      const data = await apiFetch("/inventory/ec2", {
+        token,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(commonBody),
+      });
+      setEc2Inventory(data);
+      markCheckRun("ec2_inventory");
+    } catch (err) {
+      console.error("EC2 inventory error:", err);
+      setError(err.message || "Failed to load EC2 inventory");
+    } finally {
+      setLoadingEc2(false);
+    }
+  };
+
+  const handleVpcInventory = async () => {
+    setLoadingVpc(true);
+    setError("");
+    setVpcInventory(null);
+
+    try {
+      const data = await apiFetch("/inventory/vpc", {
+        token,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(commonBody),
+      });
+      setVpcInventory(data);
+      markCheckRun("vpc_inventory");
+    } catch (err) {
+      console.error("VPC inventory error:", err);
+      setError(err.message || "Failed to load VPC inventory");
+    } finally {
+      setLoadingVpc(false);
+    }
+  };
+
+  const handleRdsInventory = async () => {
+    setLoadingRds(true);
+    setError("");
+    setRdsInventory(null);
+
+    try {
+      const data = await apiFetch("/inventory/rds", {
+        token,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(commonBody),
+      });
+      setRdsInventory(data);
+      markCheckRun("rds_inventory");
+    } catch (err) {
+      console.error("RDS inventory error:", err);
+      setError(err.message || "Failed to load RDS inventory");
+    } finally {
+      setLoadingRds(false);
+    }
+  };
+
 
   // --------- Saved AWS accounts handlers ----------
   const handleSelectAwsAccount = (e) => {
@@ -1042,7 +1126,7 @@ export default function App({ user, onLogout }) {
                 <h3 className="text-sm font-semibold text-gray-200 mb-2">
                   Checks
                 </h3>
-                <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
                   <button
                     onClick={handleScan}
                     disabled={loadingScan || !hasAccountConfig}
@@ -1090,6 +1174,35 @@ export default function App({ user, onLogout }) {
                     {loadingIam ? "Checking..." : "IAM password policy"}
                   </button>
                 </div>
+
+                {/* Inventory buttons */}
+                <div className="grid grid-cols-3 gap-3 mt-3">
+                  <button
+                    onClick={handleEc2Inventory}
+                    disabled={loadingEc2 || !hasAccountConfig}
+                    className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
+                  >
+                    {loadingEc2 ? "Loading..." : "EC2 inventory"}
+                  </button>
+
+                  <button
+                    onClick={handleVpcInventory}
+                    disabled={loadingVpc || !hasAccountConfig}
+                    className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
+                  >
+                    {loadingVpc ? "Loading..." : "VPC / network"}
+                  </button>
+
+                  <button
+                    onClick={handleRdsInventory}
+                    disabled={loadingRds || !hasAccountConfig}
+                    className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
+                  >
+                    {loadingRds ? "Loading..." : "RDS inventory"}
+                  </button>
+                </div>
+
+
 
                 <p className="text-xs text-gray-500 mt-2">
                   Tip: Make sure your IAM role trust policy allows your app
@@ -1295,6 +1408,254 @@ export default function App({ user, onLogout }) {
                           guidance here.
                         </p>
                       )}
+
+                      {/* EC2 Inventory */}
+                      {ec2Inventory && (
+                        <section className="mb-5">
+                          <h3 className="text-sm font-semibold text-gray-200 mb-1">
+                            EC2 inventory
+                          </h3>
+                          <p className="text-xs text-gray-300 mb-2">
+                            Instances:{" "}
+                            <span className="font-mono">
+                              {ec2Inventory.count}
+                            </span>
+                          </p>
+
+                          <div className="border border-slate-800/60 rounded-md bg-black/40 overflow-hidden">
+                            <table className="w-full table-fixed text-[11px]">
+                              <thead className="bg-slate-900/80 text-gray-300 text-[11px]">
+                                <tr>
+                                  <th className="px-2 py-1 text-left">Name</th>
+                                  <th className="px-2 py-1 text-left w-[140px]">Instance ID</th>
+                                  <th className="px-2 py-1 text-left w-[70px]">Type</th>
+                                  <th className="px-2 py-1 text-left w-[80px]">State</th>
+                                  <th className="px-2 py-1 text-left w-[120px]">Public IP</th>
+                                  <th className="px-2 py-1 text-left w-[110px]">
+                                    <span className="block leading-tight">Root volume</span>
+                                    <span className="block leading-tight">encryption</span>
+                                  </th>
+                                </tr>
+                              </thead>
+
+                              <tbody>
+                                {ec2Inventory.instances.map((i) => (
+                                  <tr
+                                    key={i.instance_id}
+                                    className="border-t border-slate-800/60"
+                                  >
+                                    {/* Name */}
+                                    <td className="px-2 py-1.5 text-xs text-gray-200">
+                                      <span
+                                        className="block max-w-[200px] truncate"
+                                        title={i.name || i.instance_id}
+                                      >
+                                        {i.name || "—"}
+                                      </span>
+                                    </td>
+
+                                    {/* Instance ID */}
+                                    <td className="px-2 py-1.5 font-mono text-[10px] text-gray-200 whitespace-nowrap">
+                                      {i.instance_id}
+                                    </td>
+
+                                    {/* Type */}
+                                    <td className="px-2 py-1.5 text-xs text-gray-300 whitespace-nowrap">
+                                      {i.instance_type}
+                                    </td>
+
+                                    {/* State badge */}
+                                    <td className="px-2 py-1.5 text-xs">
+                                      <span
+                                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] ${
+                                          i.state === "running"
+                                            ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-300"
+                                            : "border-slate-600/70 bg-slate-800 text-slate-200"
+                                        }`}
+                                      >
+                                        <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                                        {i.state || "unknown"}
+                                      </span>
+                                    </td>
+
+                                    {/* Public IP → badge + IP */}
+                                    <td className="px-2 py-1.5 text-[11px] text-gray-300 whitespace-nowrap">
+                                      {i.public_ip ? (
+                                        <div className="flex flex-col leading-tight">
+                                          <span className="flex items-center gap-1 text-emerald-300 text-[10px]">
+                                            🌐 <span>Public</span>
+                                          </span>
+                                          <span className="font-mono text-[10px] text-gray-400">
+                                            {i.public_ip}
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <span className="flex items-center gap-1 text-gray-400 text-[10px]">
+                                          🔒 <span>Private-only</span>
+                                        </span>
+                                      )}
+                                    </td>
+
+                                    {/* Root volume encryption */}
+                                    <td className="px-2 py-1.5 text-[11px] whitespace-nowrap">
+                                      {i.root_volume_encrypted === true ? (
+                                        <span className="inline-flex items-center gap-1 text-emerald-400 text-[11px]">
+                                          🔐 <span>Yes</span>
+                                        </span>
+                                      ) : i.root_volume_encrypted === false ? (
+                                        <span className="inline-flex items-center gap-1 text-red-400 text-[11px]">
+                                          ⚠️ <span>No</span>
+                                        </span>
+                                      ) : (
+                                        <span className="text-gray-400">—</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </section>
+                      )}
+
+                        {/* VPC / network inventory */}
+                        {vpcInventory && (
+                          <section className="mb-5">
+                            <h3 className="text-sm font-semibold text-gray-200 mb-1">
+                              VPC / network
+                            </h3>
+                            <p className="text-xs text-gray-300 mb-2">
+                              VPCs:{" "}
+                              <span className="font-mono">
+                                {vpcInventory.count}
+                              </span>
+                            </p>
+
+                            <div className="border border-slate-800/60 rounded-md bg-black/40 overflow-hidden">
+                              <table className="w-full table-fixed text-[11px]">
+                                <thead className="bg-slate-900/80 text-gray-300 text-[10px]">
+                                  <tr>
+                                    <th className="px-2 py-1 text-left">Name</th>
+                                    <th className="px-2 py-1 text-left w-[150px]">VPC ID</th>
+                                    <th className="px-2 py-1 text-left w-[120px]">CIDR</th>
+                                    <th className="px-2 py-1 text-left w-[70px]">Subnets</th>
+                                    <th className="px-2 py-1 text-left w-[60px]">IGWs</th>
+                                    <th className="px-2 py-1 text-left w-[110px]">
+                                      <span className="block leading-tight">Route tables</span>
+                                      <span className="block leading-tight">with 0.0.0.0/0</span>
+                                    </th>
+                                  </tr>
+                                </thead>
+
+                                <tbody>
+                                  {vpcInventory.vpcs.map((v) => {
+                                    const openRouteTables =
+                                      (v.route_tables || []).filter((rt) => rt.has_0_0_0_0_route)
+                                        .length;
+
+                                    return (
+                                      <tr
+                                        key={v.vpc_id}
+                                        className="border-t border-slate-800/60"
+                                      >
+                                        {/* Name */}
+                                        <td className="px-2 py-1.5 text-xs text-gray-200">
+                                          <span
+                                            className="block max-w-[200px] truncate"
+                                            title={v.name || v.vpc_id}
+                                          >
+                                            {v.name || "—"}
+                                          </span>
+                                        </td>
+
+                                        {/* VPC ID */}
+                                        <td className="px-2 py-1.5 font-mono text-[10px] text-gray-200 whitespace-nowrap">
+                                          {v.vpc_id}
+                                        </td>
+
+                                        {/* CIDR */}
+                                        <td className="px-2 py-1.5 text-xs text-gray-300 whitespace-nowrap">
+                                          {v.cidr_block}
+                                        </td>
+
+                                        {/* Subnets */}
+                                        <td className="px-2 py-1.5 text-xs text-gray-300 whitespace-nowrap">
+                                          {v.subnets?.length ?? 0}
+                                        </td>
+
+                                        {/* IGWs */}
+                                        <td className="px-2 py-1.5 text-xs text-gray-300 whitespace-nowrap">
+                                          {v.internet_gateways?.length ?? 0}
+                                        </td>
+
+                                        {/* Route tables with 0.0.0.0/0 */}
+                                        <td className="px-2 py-1.5 text-xs text-gray-300 whitespace-nowrap">
+                                          {openRouteTables}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </section>
+                        )}
+
+
+
+                    {/* RDS inventory */}
+                    {rdsInventory && (
+                      <section className="mb-5">
+                        <h3 className="text-sm font-semibold text-gray-200 mb-1">
+                          RDS inventory
+                        </h3>
+                        <p className="text-xs text-gray-300 mb-2">
+                          DB instances:{" "}
+                          <span className="font-mono">
+                            {rdsInventory.count}
+                          </span>
+                        </p>
+                        <div className="border border-slate-800/60 rounded-md bg-black/40">
+                          <table className="min-w-full">
+                          <thead className="bg-slate-900/80 text-gray-300 text-[11px]">
+                              <tr>
+                              <th className="px-2 py-1 text-left">Name</th>
+                              <th className="px-2 py-1 text-left">Instance ID</th>
+                              <th className="px-2 py-1 text-left">Type</th>
+                              <th className="px-2 py-1 text-left">State</th>
+                              <th className="px-2 py-1 text-left">Public exposure</th>
+                              <th className="px-2 py-1 text-left">Root encryption</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {rdsInventory.instances.map((db) => (
+                                <tr key={db.id} className="border-t border-slate-800/60">
+                                  <td className="px-2 py-1 font-mono text-gray-300">
+                                    {db.id}
+                                  </td>
+                                  <td className="px-2 py-1 text-gray-300">
+                                    {db.engine} {db.engine_version}
+                                  </td>
+                                  <td className="px-2 py-1 text-gray-300">
+                                    {db.storage_encrypted ? "🔐" : "⚠️"}
+                                  </td>
+                                  <td className="px-2 py-1 text-gray-300">
+                                    {db.publicly_accessible ? "🌐" : "🔒"}
+                                  </td>
+                                  <td className="px-2 py-1 text-gray-300">
+                                    {db.backup_retention_period || 0} days
+                                  </td>
+                                  <td className="px-2 py-1 text-gray-300">
+                                    {db.multi_az ? "✅" : "—"}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </section>
+                    )}
+
 
                     {/* Security Hub */}
                     {scanResult && (

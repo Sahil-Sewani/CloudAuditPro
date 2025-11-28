@@ -283,3 +283,233 @@ def get_ebs_encryption_status(creds: dict, region: str = DEFAULT_REGION) -> dict
         "total_volumes": len(volumes),
         "unencrypted_volume_ids": unencrypted_volume_ids,
     }
+
+def _get_tag_value(tags: List[dict], key: str) -> Optional[str]:
+    if not tags:
+        return None
+    for t in tags:
+        if t.get("Key") == key:
+            return t.get("Value")
+    return None
+
+
+def get_ec2_inventory(creds: dict, region: str = DEFAULT_REGION) -> dict:
+    """
+    Simple EC2 inventory:
+      - instance_id
+      - name tag
+      - public / private IP
+      - instance_type
+      - state
+      - security groups
+      - root volume encryption flag (via DescribeVolumes)
+    """
+    ec2 = ec2_client_from_creds(creds, region)
+
+    raw_instances: List[dict] = []
+    root_volume_ids: set[str] = set()
+    kwargs: Dict = {}
+
+    # 1) Collect instances + their root volume IDs
+    while True:
+        resp = ec2.describe_instances(**kwargs)
+
+        for reservation in resp.get("Reservations", []):
+            for inst in reservation.get("Instances", []):
+                instance_id = inst.get("InstanceId")
+                name = _get_tag_value(inst.get("Tags", []), "Name")
+                public_ip = inst.get("PublicIpAddress")
+                private_ip = inst.get("PrivateIpAddress")
+                state = (inst.get("State") or {}).get("Name")
+                instance_type = inst.get("InstanceType")
+                sg_ids = [sg.get("GroupId") for sg in inst.get("SecurityGroups", [])]
+
+                root_device = inst.get("RootDeviceName")
+                root_volume_id = None
+
+                for bdm in inst.get("BlockDeviceMappings", []):
+                    ebs = bdm.get("Ebs")
+                    if not ebs:
+                        continue
+
+                    # Prefer an exact match to the root device, but fall back
+                    # to the first EBS mapping if we can't match by name.
+                    if root_device is None or bdm.get("DeviceName") == root_device:
+                        root_volume_id = ebs.get("VolumeId")
+                        break
+
+                if root_volume_id:
+                    root_volume_ids.add(root_volume_id)
+
+                raw_instances.append(
+                    {
+                        "instance_id": instance_id,
+                        "name": name,
+                        "public_ip": public_ip,
+                        "private_ip": private_ip,
+                        "state": state,
+                        "instance_type": instance_type,
+                        "security_groups": sg_ids,
+                        "root_volume_id": root_volume_id,
+                    }
+                )
+
+        token = resp.get("NextToken")
+        if not token:
+            break
+        kwargs["NextToken"] = token
+
+    # 2) Describe volumes to get encryption flags
+    volume_encryption: dict[str, bool] = {}
+
+    if root_volume_ids:
+        vol_kwargs: Dict = {"VolumeIds": list(root_volume_ids)}
+        while True:
+            vol_resp = ec2.describe_volumes(**vol_kwargs)
+            for v in vol_resp.get("Volumes", []):
+                vid = v.get("VolumeId")
+                if vid:
+                    volume_encryption[vid] = bool(v.get("Encrypted"))
+            next_token = vol_resp.get("NextToken")
+            if not next_token:
+                break
+            vol_kwargs["NextToken"] = next_token
+
+    # 3) Build final instance list with root_volume_encrypted filled in
+    instances: List[dict] = []
+    for inst in raw_instances:
+        rid = inst.get("root_volume_id")
+        root_enc = volume_encryption.get(rid) if rid else None
+
+        instances.append(
+            {
+                "instance_id": inst["instance_id"],
+                "name": inst["name"],
+                "public_ip": inst["public_ip"],
+                "private_ip": inst["private_ip"],
+                "state": inst["state"],
+                "instance_type": inst["instance_type"],
+                "security_groups": inst["security_groups"],
+                "root_volume_encrypted": root_enc,
+            }
+        )
+
+    return {"instances": instances, "count": len(instances)}
+
+
+
+def get_vpc_inventory(creds: dict, region: str = DEFAULT_REGION) -> dict:
+    """
+    Basic network view:
+      - VPCs with CIDR + name
+      - Subnets per VPC
+      - Internet gateways per VPC
+      - Route tables with 0.0.0.0/0 detection
+    """
+    ec2 = ec2_client_from_creds(creds, region)
+
+    vpcs = ec2.describe_vpcs().get("Vpcs", [])
+    subnets = ec2.describe_subnets().get("Subnets", [])
+    igws = ec2.describe_internet_gateways().get("InternetGateways", [])
+    route_tables = ec2.describe_route_tables().get("RouteTables", [])
+
+    # Index helpers
+    subnets_by_vpc: Dict[str, List[dict]] = {}
+    for s in subnets:
+        vid = s.get("VpcId")
+        subnets_by_vpc.setdefault(vid, []).append(
+            {
+                "subnet_id": s.get("SubnetId"),
+                "cidr_block": s.get("CidrBlock"),
+                "az": s.get("AvailabilityZone"),
+                "name": _get_tag_value(s.get("Tags", []), "Name"),
+            }
+        )
+
+    igws_by_vpc: Dict[str, List[dict]] = {}
+    for igw in igws:
+        igw_id = igw.get("InternetGatewayId")
+        for att in igw.get("Attachments", []):
+            vid = att.get("VpcId")
+            igws_by_vpc.setdefault(vid, []).append(
+                {
+                    "internet_gateway_id": igw_id,
+                    "state": att.get("State"),
+                }
+            )
+
+    rts_by_vpc: Dict[str, List[dict]] = {}
+    for rt in route_tables:
+        vid = rt.get("VpcId")
+        if not vid:
+            continue
+        routes = rt.get("Routes", [])
+        has_0_0_0_0 = any(
+            r.get("DestinationCidrBlock") == "0.0.0.0/0" for r in routes
+        )
+        rts_by_vpc.setdefault(vid, []).append(
+            {
+                "route_table_id": rt.get("RouteTableId"),
+                "has_0_0_0_0_route": has_0_0_0_0,
+            }
+        )
+
+    vpc_items: List[dict] = []
+    for v in vpcs:
+        vid = v.get("VpcId")
+        vpc_items.append(
+            {
+                "vpc_id": vid,
+                "cidr_block": v.get("CidrBlock"),
+                "name": _get_tag_value(v.get("Tags", []), "Name"),
+                "subnets": subnets_by_vpc.get(vid, []),
+                "internet_gateways": igws_by_vpc.get(vid, []),
+                "route_tables": rts_by_vpc.get(vid, []),
+            }
+        )
+
+    return {"vpcs": vpc_items, "count": len(vpc_items)}
+
+
+def rds_client_from_creds(creds: dict, region: str = DEFAULT_REGION):
+    return boto3.client(
+        "rds",
+        region_name=region,
+        aws_access_key_id=creds["AccessKeyId"],
+        aws_secret_access_key=creds["SecretAccessKey"],
+        aws_session_token=creds["SessionToken"],
+    )
+
+
+def get_rds_inventory(creds: dict, region: str = DEFAULT_REGION) -> dict:
+    """
+    Basic RDS inventory:
+      - id, engine, encrypted?, public?, backups?, multi-AZ
+    """
+    rds = rds_client_from_creds(creds, region)
+    instances: List[dict] = []
+    marker: Optional[str] = None
+
+    while True:
+        kwargs: Dict = {}
+        if marker:
+            kwargs["Marker"] = marker
+        resp = rds.describe_db_instances(**kwargs)
+        for db in resp.get("DBInstances", []):
+            instances.append(
+                {
+                    "id": db.get("DBInstanceIdentifier"),
+                    "arn": db.get("DBInstanceArn"),
+                    "engine": db.get("Engine"),
+                    "engine_version": db.get("EngineVersion"),
+                    "storage_encrypted": db.get("StorageEncrypted"),
+                    "publicly_accessible": db.get("PubliclyAccessible"),
+                    "backup_retention_period": db.get("BackupRetentionPeriod"),
+                    "multi_az": db.get("MultiAZ"),
+                }
+            )
+        marker = resp.get("Marker")
+        if not marker:
+            break
+
+    return {"instances": instances, "count": len(instances)}

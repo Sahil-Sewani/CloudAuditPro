@@ -22,6 +22,9 @@ from .aws import (
     get_config_status,
     get_iam_password_policy_status,
     get_ebs_encryption_status,
+    get_ec2_inventory,
+    get_vpc_inventory,
+    get_rds_inventory,
 )
 from .report import build_summary, render_s3_section
 
@@ -423,6 +426,54 @@ def s3_summary(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/inventory/ec2")
+def inventory_ec2(
+    inp: ScanInput,
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    EC2 inventory for a single AWS account / region.
+    """
+    try:
+        creds = assume_customer_role(inp.account_id, inp.role_name)
+        data = get_ec2_inventory(creds, inp.region)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/inventory/vpc")
+def inventory_vpc(
+    inp: ScanInput,
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    VPC / network inventory (VPCs, subnets, IGWs, route tables with 0.0.0.0/0).
+    """
+    try:
+        creds = assume_customer_role(inp.account_id, inp.role_name)
+        data = get_vpc_inventory(creds, inp.region)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/inventory/rds")
+def inventory_rds(
+    inp: ScanInput,
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    RDS inventory (encryption, public accessibility, backups, multi-AZ).
+    """
+    try:
+        creds = assume_customer_role(inp.account_id, inp.role_name)
+        data = get_rds_inventory(creds, inp.region)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/checks/cloudtrail")
 def check_cloudtrail(
