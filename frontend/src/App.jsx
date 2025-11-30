@@ -717,20 +717,22 @@ const sgGroupsRaw =
 
 const sgGroups = Array.isArray(sgGroupsRaw) ? sgGroupsRaw : [];
 
-// World-open SGs
 const sgWorldOpenCount = sgGroups.filter((g) => g.world_open).length;
 
-// SSH 22: world vs any
+// SSH 22 world vs any
 const sgSshWorldOpenCount = sgGroups.filter((g) => g.ssh_open).length;
 const sgSshAnyOpenCount = sgGroups.filter((g) => g.ssh_any_open).length;
 
-// RDP (world-exposed)
-const sgRdpOpenCount = sgGroups.filter((g) => g.rdp_open).length;
+// RDP 3389 world
+const sgRdpWorldOpenCount = sgGroups.filter((g) => g.rdp_open).length;
 
-// Web 80/443 (world-exposed)
-const sgWebOpenCount = sgGroups.filter(
-  (g) => Array.isArray(g.web_ports) && g.web_ports.length > 0
+// Web 80/443 world
+const sgWebWorldOpenCount = sgGroups.filter(
+  (g) =>
+    Array.isArray(g.world_ports) &&
+    g.world_ports.some((p) => p === 80 || p === 443)
 ).length;
+
 
 
 
@@ -1620,7 +1622,7 @@ const sgWebOpenCount = sgGroups.filter(
                       Security groups
                     </h3>
 
-                    <p className="text-[11.3px] text-gray-300 mb-1">
+                    <p className="text-[10px] text-gray-300 mb-1">
                       Groups:{" "}
                       <span className="font-mono">{sgInventory.count}</span>{" "}
                       • World-open SGs:{" "}
@@ -1637,13 +1639,14 @@ const sgWebOpenCount = sgGroups.filter(
                       </span>{" "}
                       • RDP 3389 (world):{" "}
                       <span className="font-mono text-amber-300">
-                        {sgRdpOpenCount}
+                        {sgRdpWorldOpenCount}
                       </span>{" "}
                       • Web 80/443 (world):{" "}
                       <span className="font-mono text-amber-300">
-                        {sgWebOpenCount}
+                        {sgWebWorldOpenCount}
                       </span>
                     </p>
+
 
 
 
@@ -1703,98 +1706,95 @@ const sgWebOpenCount = sgGroups.filter(
                                 </td>
                               </tr>
 
-                        {/* Exposure detail row (full width) */}
-                        <tr className="border-t border-slate-900/60">
-                          <td
-                            colSpan={4}
-                            className="px-2 py-1.5 text-[10px] text-gray-200 bg-slate-950/40"
-                          >
-                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                              {/* World / restricted */}
-                              {g.world_open ? (
-                                <span className="inline-flex items-center gap-1 text-red-300">
-                                  🌐 <span className="font-semibold">World-open</span>
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-emerald-300">
-                                  🛡️ <span className="font-semibold">Restricted</span>
-                                </span>
-                              )}
+                          {/* Exposure detail row (full width) */}
+                          <tr className="border-t border-slate-900/60">
+                            <td
+                              colSpan={4}
+                              className="px-2 py-1.5 text-[10px] text-gray-200 bg-slate-950/40"
+                            >
+                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                                {/* World / restricted */}
+                                {g.world_open ? (
+                                  <span className="inline-flex items-center gap-1 text-red-300">
+                                    🌐 World-open
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-emerald-300">
+                                    🛡️ Restricted
+                                  </span>
+                                )}
 
-                              {/* SSH – world vs any vs closed */}
-                              {g.ssh_open ? (
-                                <span className="inline-flex items-center gap-1 text-red-300">
-                                  <span className="font-semibold">SSH</span>
-                                  <span className="px-1.5 py-0.5 rounded-full bg-red-500/10 border border-red-500/40 text-[9px] uppercase tracking-wide">
-                                    world-open
-                                  </span>
+                                {/* SSH 22: world vs any */}
+                                <span
+                                  className={
+                                    g.ssh_open
+                                      ? "text-red-300"
+                                      : g.ssh_any_open
+                                      ? "text-amber-300"
+                                      : "text-emerald-300"
+                                  }
+                                >
+                                  SSH 22:{" "}
+                                  {g.ssh_open
+                                    ? "world-open"
+                                    : g.ssh_any_open
+                                    ? "open (restricted CIDRs)"
+                                    : "closed"}
                                 </span>
-                              ) : g.ssh_any_open ? (
-                                <span className="inline-flex items-center gap-1 text-amber-300">
-                                  <span className="font-semibold">SSH</span>
-                                  <span className="px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/40 text-[9px] uppercase tracking-wide">
-                                    open (restricted)
-                                  </span>
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-emerald-300">
-                                  <span className="font-semibold">SSH</span>
-                                  <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/40 text-[9px] uppercase tracking-wide">
-                                    closed
-                                  </span>
-                                </span>
-                              )}
 
-                              {/* RDP – world vs any vs closed */}
-                              {g.rdp_open ? (
-                                <span className="inline-flex items-center gap-1 text-red-300">
-                                  <span className="font-semibold">RDP</span>
-                                  <span className="px-1.5 py-0.5 rounded-full bg-red-500/10 border border-red-500/40 text-[9px] uppercase tracking-wide">
-                                    world-open
-                                  </span>
+                                {/* RDP 3389: any-open */}
+                                <span
+                                  className={
+                                    g.rdp_open
+                                      ? "text-red-300"
+                                      : g.rdp_any_open
+                                      ? "text-amber-300"
+                                      : "text-emerald-300"
+                                  }
+                                >
+                                  RDP 3389:{" "}
+                                  {g.rdp_open
+                                    ? "world-open"
+                                    : g.rdp_any_open
+                                    ? "open (restricted CIDRs)"
+                                    : "closed"}
                                 </span>
-                              ) : g.rdp_any_open ? (
-                                <span className="inline-flex items-center gap-1 text-amber-300">
-                                  <span className="font-semibold">RDP</span>
-                                  <span className="px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/40 text-[9px] uppercase tracking-wide">
-                                    open (restricted)
-                                  </span>
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-emerald-300">
-                                  <span className="font-semibold">RDP</span>
-                                  <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/40 text-[9px] uppercase tracking-wide">
-                                    closed
-                                  </span>
-                                </span>
-                              )}
 
-                              {/* Web – world vs any vs closed */}
-                              {g.http_open || g.https_open ? (
-                                <span className="inline-flex items-center gap-1 text-amber-300">
-                                  <span className="font-semibold">Web 80/443</span>
-                                  <span className="px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/40 text-[9px] uppercase tracking-wide">
-                                    world-open
-                                  </span>
+                                {/* Web 80/443: any-open */}
+                                <span
+                                  className={
+                                    g.web_any_open
+                                      ? "text-amber-300"
+                                      : "text-gray-400"
+                                  }
+                                >
+                                  Web 80/443:{" "}
+                                  {g.web_any_open ? "open" : "closed"}
                                 </span>
-                              ) : g.web_any_open ? (
-                                <span className="inline-flex items-center gap-1 text-amber-300">
-                                  <span className="font-semibold">Web 80/443</span>
-                                  <span className="px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/40 text-[9px] uppercase tracking-wide">
-                                    open (restricted)
+
+                                {/* CIDRs summary */}
+                                {Array.isArray(g.cidr_list) && g.cidr_list.length > 0 && (
+                                  <span
+                                    className="text-gray-300 truncate max-w-[220px]"
+                                    title={g.cidr_list.join(", ")}
+                                  >
+                                    CIDRs: {g.cidr_list.length}
                                   </span>
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-gray-400">
-                                  <span className="font-semibold">Web 80/443</span>
-                                  <span className="px-1.5 py-0.5 rounded-full bg-slate-700/40 border border-slate-600/60 text-[9px] uppercase tracking-wide">
-                                    closed
+                                )}
+
+                                {/* Port ranges summary */}
+                                {Array.isArray(g.port_ranges) && g.port_ranges.length > 0 && (
+                                  <span
+                                    className="text-gray-400 truncate max-w-[220px]"
+                                    title={g.port_ranges.join(", ")}
+                                  >
+                                    Ports: {g.port_ranges.join(", ")}
                                   </span>
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+
 
 
                             </React.Fragment>
@@ -2360,103 +2360,162 @@ const sgWebOpenCount = sgGroups.filter(
         </div>
       </main>
 
-      {/* SG inbound rules modal */}
-      {showSgModal && selectedSecurityGroup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-          <div className="bg-slate-950 border border-slate-700 rounded-2xl max-w-2xl w-full mx-4 p-5 shadow-xl shadow-black/50">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-gray-100">
-                Inbound rules –{" "}
-                {selectedSecurityGroup.name || selectedSecurityGroup.group_id}
-              </h3>
-              <button
-                onClick={() => {
-                  setShowSgModal(false);
-                  setSelectedSecurityGroup(null);
-                }}
-                className="text-xs text-gray-400 hover:text-gray-200"
-              >
-                Close
-              </button>
-            </div>
+            {/* SG inbound rules modal */}
+            {showSgModal &&
+              selectedSecurityGroup &&
+              (() => {
+                const rawRules =
+                  selectedSecurityGroup.inbound_rules_detail ||
+                  selectedSecurityGroup.inbound_rules ||
+                  [];
 
-            <p className="text-[11px] text-gray-400 mb-2">
-              Showing inbound rules for this security group. Review any entries
-              that allow broad access (0.0.0.0/0 or ::/0), especially on SSH,
-              RDP, or web ports.
-            </p>
+                const rules = Array.isArray(rawRules) ? rawRules : [];
 
-            <div className="border border-slate-800 rounded-md bg-black/50 max-h-72 overflow-auto">
-              <table className="w-full text-[11px]">
-                <thead className="bg-slate-900/80 text-gray-300">
-                  <tr>
-                    <th className="px-2 py-1 text-left">Protocol</th>
-                    <th className="px-2 py-1 text-left">Port(s)</th>
-                    <th className="px-2 py-1 text-left">Source</th>
-                    <th className="px-2 py-1 text-left">Description</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(selectedSecurityGroup.inbound_rules || []).length > 0 ? (
-                    selectedSecurityGroup.inbound_rules.map((r, idx) => {
-                      // Try to normalize fields for display
-                      const proto = r.protocol ?? r.IpProtocol ?? "-";
-                      const from = r.from_port ?? r.FromPort;
-                      const to = r.to_port ?? r.ToPort;
-                      const portRange =
-                        from === undefined && to === undefined
-                          ? "All"
-                          : from === to
-                          ? from
-                          : `${from}–${to}`;
-                      const cidr =
-                        r.cidr ??
-                        r.CidrIp ??
-                        r.CidrIpv6 ??
-                        r.source ??
-                        "-";
-                      const desc =
-                        r.description ??
-                        r.Description ??
-                        r.desc ??
-                        "";
+                const hasWorldOpen = !!selectedSecurityGroup.world_open;
+                const hasSshWorld = !!selectedSecurityGroup.ssh_open;
+                const hasSshAny = !!selectedSecurityGroup.ssh_any_open;
+                const hasWebWorld =
+                  !!selectedSecurityGroup.http_open || !!selectedSecurityGroup.https_open;
 
-                      return (
-                        <tr
-                          key={idx}
-                          className="border-t border-slate-800/60"
+                return (
+                  <div className="fixed inset-0 z-40 flex items-start justify-center bg-black/60 px-4 py-10">
+                    <div className="w-full max-w-3xl rounded-lg border border-slate-700 bg-slate-950 shadow-xl">
+                      {/* Header */}
+                      <div className="flex items-start justify-between border-b border-slate-800 px-4 py-3">
+                        <div>
+                          <h3 className="text-sm font-semibold text-gray-100">
+                            Security group:{" "}
+                            {selectedSecurityGroup.group_name ||
+                              selectedSecurityGroup.group_id}
+                          </h3>
+                          <p className="text-[11px] text-gray-400 font-mono">
+                            {selectedSecurityGroup.group_id}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowSgModal(false);
+                            setSelectedSecurityGroup(null);
+                          }}
+                          className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-[11px] text-gray-200 hover:bg-slate-800"
                         >
-                          <td className="px-2 py-1 text-gray-300">
-                            {proto}
-                          </td>
-                          <td className="px-2 py-1 text-gray-300">
-                            {portRange}
-                          </td>
-                          <td className="px-2 py-1 text-gray-300">
-                            {cidr}
-                          </td>
-                          <td className="px-2 py-1 text-gray-400">
-                            {desc || "—"}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td
-                        colSpan={4}
-                        className="px-2 py-3 text-center text-gray-500 text-[11px]"
-                      >
-                        No inbound rules found for this security group.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
+                          Close
+                        </button>
+                      </div>
+
+                      {/* Badges row */}
+                      <div className="flex flex-wrap items-center gap-2 px-4 py-2 text-[11px]">
+                        <span className="inline-flex items-center rounded-full bg-slate-900 px-2 py-0.5 text-gray-300">
+                          Inbound rules:{" "}
+                          <span className="ml-1 font-mono text-gray-100">
+                            {rules.length}
+                          </span>
+                        </span>
+
+                        {hasWorldOpen ? (
+                          <span className="inline-flex items-center rounded-full bg-red-900/40 px-2 py-0.5 text-red-200">
+                            🌐 World-open
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full bg-emerald-900/40 px-2 py-0.5 text-emerald-200">
+                            🛡️ No world-open CIDRs
+                          </span>
+                        )}
+
+                        {hasSshWorld && (
+                          <span className="inline-flex items-center rounded-full bg-red-900/40 px-2 py-0.5 text-red-200">
+                            SSH 22 world-open
+                          </span>
+                        )}
+
+                        {hasSshAny && !hasSshWorld && (
+                          <span className="inline-flex items-center rounded-full bg-amber-900/40 px-2 py-0.5 text-amber-200">
+                            SSH 22 open (restricted CIDRs)
+                          </span>
+                        )}
+
+                        {hasWebWorld && (
+                          <span className="inline-flex items-center rounded-full bg-amber-900/40 px-2 py-0.5 text-amber-200">
+                            Web 80/443 open
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Rules table */}
+                      <div className="px-4 pb-4">
+                        {rules.length === 0 ? (
+                          <div className="rounded-md bg-slate-900/60 px-3 py-2 text-[11px] text-gray-400">
+                            No inbound rules found for this security group.
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto rounded-md border border-slate-800">
+                            <table className="w-full text-[11px]">
+                              <thead className="bg-slate-900 text-gray-300">
+                                <tr>
+                                  <th className="px-2 py-1 text-left w-[80px]">Protocol</th>
+                                  <th className="px-2 py-1 text-left w-[80px]">Ports</th>
+                                  <th className="px-2 py-1 text-left">Source</th>
+                                  <th className="px-2 py-1 text-left w-[160px]">
+                                    Description
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {rules.map((rule, idx) => {
+                                  const proto =
+                                    rule.protocol === "-1" || rule.protocol == null
+                                      ? "all"
+                                      : rule.protocol;
+
+                                  let portsLabel = "All";
+                                  if (
+                                    rule.from_port != null &&
+                                    rule.to_port != null
+                                  ) {
+                                    if (rule.from_port === rule.to_port) {
+                                      portsLabel = String(rule.from_port);
+                                    } else {
+                                      portsLabel = `${rule.from_port}-${rule.to_port}`;
+                                    }
+                                  }
+
+                                  const source =
+                                    rule.source ||
+                                    (Array.isArray(rule.sources) &&
+                                      rule.sources.join(", ")) ||
+                                    "—";
+
+                                  return (
+                                    <tr
+                                      key={idx}
+                                      className="border-t border-slate-800/70 text-gray-200"
+                                    >
+                                      <td className="px-2 py-1 font-mono text-[10px]">
+                                        {proto}
+                                      </td>
+                                      <td className="px-2 py-1 font-mono text-[10px]">
+                                        {portsLabel}
+                                      </td>
+                                      <td className="px-2 py-1 font-mono text-[10px]">
+                                        {source}
+                                      </td>
+                                      <td className="px-2 py-1 text-[10px] text-gray-300">
+                                        {rule.description || "—"}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
 
     </div>
   );
