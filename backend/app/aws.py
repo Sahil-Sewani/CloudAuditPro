@@ -1,7 +1,7 @@
 import os
 import boto3
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 EXTERNAL_ID = os.getenv("EXTERNAL_ID", "cloudauditpro")
 DEFAULT_REGION = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
@@ -513,3 +513,165 @@ def get_rds_inventory(creds: dict, region: str = DEFAULT_REGION) -> dict:
             break
 
     return {"instances": instances, "count": len(instances)}
+
+
+def _perm_allows_world(perm: Dict[str, Any]) -> bool:
+    """Return True if this permission has 0.0.0.0/0 or ::/0."""
+    ipv4_ranges = [r.get("CidrIp") for r in perm.get("IpRanges", [])]
+    ipv6_ranges = [r.get("CidrIpv6") for r in perm.get("Ipv6Ranges", [])]
+    all_cidrs = [c for c in ipv4_ranges + ipv6_ranges if c]
+    return any(cidr in ("0.0.0.0/0", "::/0") for cidr in all_cidrs)
+
+
+def _perm_matches_port(perm: Dict[str, Any], port: int) -> bool:
+    """Return True if this permission covers the given TCP/UDP port."""
+    if "FromPort" not in perm or perm.get("FromPort") is None:
+        return False  # likely ICMP or something non-port-based
+    from_p = perm.get("FromPort")
+    to_p = perm.get("ToPort", from_p)
+    try:
+        return int(from_p) <= port <= int(to_p)
+    except (TypeError, ValueError):
+        return False
+
+
+def _normalize_sg_rules(sg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    Flatten IpPermissions into a list of inbound rules for the UI.
+
+    Each rule:
+    {
+        "protocol": "tcp" | "udp" | "-1",
+        "from_port": 22,
+        "to_port": 22,
+        "source": "0.0.0.0/0" | "::/0" | "sg:sg-1234...",
+        "description": "optional text",
+    }
+    """
+    rules: List[Dict[str, Any]] = []
+
+    for perm in sg.get("IpPermissions", []) or []:
+        proto = perm.get("IpProtocol", "-1")
+        from_port = perm.get("FromPort")
+        to_port = perm.get("ToPort", from_port)
+
+        def add_rule(source: str, desc: Optional[str] = None) -> None:
+            rules.append(
+                {
+                    "protocol": proto,
+                    "from_port": from_port,
+                    "to_port": to_port,
+                    "source": source,
+                    "description": desc or "",
+                }
+            )
+
+        # IPv4 CIDRs
+        for r in perm.get("IpRanges", []):
+            cidr = r.get("CidrIp") or "0.0.0.0/0"
+            add_rule(cidr, r.get("Description"))
+
+        # IPv6 CIDRs
+        for r in perm.get("Ipv6Ranges", []):
+            cidr = r.get("CidrIpv6") or "::/0"
+            add_rule(cidr, r.get("Description"))
+
+        # SG-to-SG references
+        for pair in perm.get("UserIdGroupPairs", []):
+            src = pair.get("GroupId") or pair.get("GroupName") or "sg-ref"
+            add_rule(f"sg:{src}", pair.get("Description"))
+
+    return rules
+
+
+def get_sg_inventory(creds: dict, region: str = DEFAULT_REGION) -> dict:
+    """
+    Security Group inventory with exposure flags + normalized rules.
+
+    Returned shape (what the frontend expects):
+
+    {
+      "count": 2,
+      "groups": [
+        {
+          "group_id": "...",
+          "name": "...",
+          "description": "...",
+          "inbound_count": 2,
+          "inbound_rules": [ ... rules ... ],
+          "world_open": true/false,
+          "ssh_22_open": true/false,   # 22 world-open
+          "rdp_3389_open": true/false, # 3389 world-open
+          "web_ports": [80, 443]       # world-open web ports
+        },
+        ...
+      ]
+    }
+    """
+    ec2 = ec2_client_from_creds(creds, region)
+    groups: List[dict] = []
+
+    paginator = ec2.get_paginator("describe_security_groups")
+    page_iterator = paginator.paginate()
+
+    for page in page_iterator:
+        for sg in page.get("SecurityGroups", []):
+            perms = sg.get("IpPermissions", []) or []
+
+            # Normalized rules for the modal
+            rules = _normalize_sg_rules(sg)
+
+            world_open = False
+            ssh_open = False
+            rdp_open = False
+            http_open = False
+            https_open = False
+            world_ports: set[int] = set()
+
+            for perm in perms:
+                # Only consider world-exposed CIDRs for these flags
+                if not _perm_allows_world(perm):
+                    continue
+
+                world_open = True
+
+                if "FromPort" in perm and perm.get("FromPort") is not None:
+                    try:
+                        from_p = int(perm.get("FromPort"))
+                        to_p = int(perm.get("ToPort", from_p))
+                    except (TypeError, ValueError):
+                        continue
+
+                    # Collect world-exposed ports (bounded range for sanity)
+                    for p in range(from_p, min(to_p, from_p + 1000) + 1):
+                        world_ports.add(p)
+
+                    if _perm_matches_port(perm, 22):
+                        ssh_open = True
+                    if _perm_matches_port(perm, 3389):
+                        rdp_open = True
+                    if _perm_matches_port(perm, 80):
+                        http_open = True
+                    if _perm_matches_port(perm, 443):
+                        https_open = True
+
+            groups.append(
+                {
+                    "group_id": sg.get("GroupId"),
+                    "name": sg.get("GroupName"),
+                    "description": sg.get("Description"),
+                    "inbound_count": len(rules),
+                    "inbound_rules": rules,
+                    "world_open": world_open,
+                    # these are *world-open* flags for summary badges
+                    "ssh_22_open": ssh_open,
+                    "rdp_3389_open": rdp_open,
+                    # frontend uses this for the Web badge
+                    "web_ports": sorted(p for p in world_ports if p in (80, 443)),
+                }
+            )
+
+    return {
+        "count": len(groups),
+        "groups": groups,
+    }

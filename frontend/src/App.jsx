@@ -55,11 +55,14 @@ export default function App({ user, onLogout }) {
   const [ec2Inventory, setEc2Inventory] = useState(null);
   const [vpcInventory, setVpcInventory] = useState(null);
   const [rdsInventory, setRdsInventory] = useState(null);
+  const [sgInventory, setSgInventory] = useState(null);
 
   const [loadingEc2, setLoadingEc2] = useState(false);
   const [loadingVpc, setLoadingVpc] = useState(false);
   const [loadingRds, setLoadingRds] = useState(false);
-
+  const [loadingSg, setLoadingSg] = useState(false);
+  const [selectedSecurityGroup, setSelectedSecurityGroup] = useState(null);
+  const [showSgModal, setShowSgModal] = useState(false);  
 
   // --------- Loading + error ----------
   const [loadingScan, setLoadingScan] = useState(false);
@@ -93,7 +96,8 @@ export default function App({ user, onLogout }) {
     loadingCompliance ||
     loadingEc2 ||
     loadingVpc ||
-    loadingRds;
+    loadingRds ||
+    loadingSg;
 
   const markCheckRun = (id) => {
     setChecksRun((prev) => (prev.includes(id) ? prev : [...prev, id]));
@@ -232,6 +236,7 @@ export default function App({ user, onLogout }) {
     setEc2Inventory(null);
     setVpcInventory(null);
     setRdsInventory(null);
+    setSgInventory(null);
   }, [accountId, roleName, region]);
 
   // --------- Action handlers ----------
@@ -534,6 +539,29 @@ export default function App({ user, onLogout }) {
     }
   };
 
+  const handleSgInventory = async () => {
+    setLoadingSg(true);
+    setError("");
+    setSgInventory(null);
+
+    try {
+      const data = await apiFetch("/inventory/sg", {
+        token,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(commonBody),
+      });
+      setSgInventory(data);
+      markCheckRun("sg_inventory");
+    } catch (err) {
+      console.error("Security Group inventory error:", err);
+      setError(err.message || "Failed to load Security Group inventory");
+    } finally {
+      setLoadingSg(false);
+    }
+  };
+
+
 
   // --------- Saved AWS accounts handlers ----------
   const handleSelectAwsAccount = (e) => {
@@ -647,6 +675,55 @@ export default function App({ user, onLogout }) {
       </span>
     );
   };
+
+  const renderSecurityGroupRisk = (g) => {
+    // These booleans should come from your backend payload
+    const worldOpen = !!g.world_open;
+    const sshOpen = !!g.ssh_22_open;
+    const rdpOpen = !!g.rdp_3389_open;
+    const webOpen = Array.isArray(g.web_ports) && g.web_ports.length > 0;
+  
+    if (worldOpen && (sshOpen || rdpOpen || webOpen)) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-red-900/50 border border-red-500/70 text-red-200">
+          🔥 <span>High</span>
+        </span>
+      );
+    }
+  
+    if (worldOpen) {
+      return (
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-amber-900/40 border border-amber-500/70 text-amber-200">
+          ⚠️ <span>Medium</span>
+        </span>
+      );
+    }
+  
+    return (
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-emerald-900/40 border border-emerald-500/70 text-emerald-200">
+        ✅ <span>Low</span>
+      </span>
+    );
+  };
+
+// --------- Derived summary for Security Groups ----------
+// Support a few possible shapes from the backend just in case
+const sgGroupsRaw =
+  (sgInventory &&
+    (sgInventory.groups ||
+      sgInventory.security_groups ||
+      sgInventory.items)) ||
+  [];
+
+const sgGroups = Array.isArray(sgGroupsRaw) ? sgGroupsRaw : [];
+
+const sgWorldOpenCount = sgGroups.filter((g) => g.world_open).length;
+const sgSshOpenCount = sgGroups.filter((g) => g.ssh_22_open).length;
+const sgRdpOpenCount = sgGroups.filter((g) => g.rdp_3389_open).length;
+const sgWebOpenCount = sgGroups.filter(
+  (g) => Array.isArray(g.web_ports) && g.web_ports.length > 0
+).length;
+
 
   // Pulse color for overall score
   const scorePulseColor = !hasRunCompliance
@@ -1176,7 +1253,7 @@ export default function App({ user, onLogout }) {
                 </div>
 
                 {/* Inventory buttons */}
-                <div className="grid grid-cols-3 gap-3 mt-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
                   <button
                     onClick={handleEc2Inventory}
                     disabled={loadingEc2 || !hasAccountConfig}
@@ -1200,7 +1277,16 @@ export default function App({ user, onLogout }) {
                   >
                     {loadingRds ? "Loading..." : "RDS inventory"}
                   </button>
+
+                  <button
+                    onClick={handleSgInventory}
+                    disabled={loadingSg || !hasAccountConfig}
+                    className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
+                  >
+                    {loadingSg ? "Loading..." : "Security groups"}
+                  </button>
                 </div>
+
 
 
 
@@ -1517,6 +1603,155 @@ export default function App({ user, onLogout }) {
                           </div>
                         </section>
                       )}
+
+                {/* Security groups inventory */}
+                {sgInventory && (
+                  <section className="mb-5">
+                    <h3 className="text-sm font-semibold text-gray-200 mb-1">
+                      Security groups
+                    </h3>
+
+                    <p className="text-xs text-gray-300 mb-1">
+                      Groups:{" "}
+                      <span className="font-mono">{sgInventory.count}</span>{" "}
+                      • World-open SGs:{" "}
+                      <span className="font-mono text-red-300">
+                        {sgWorldOpenCount}
+                      </span>{" "}
+                      • SSH 22 world-open:{" "}
+                      <span className="font-mono text-amber-300">
+                        {sgSshOpenCount}
+                      </span>{" "}
+                      • RDP 3389 world-open:{" "}
+                      <span className="font-mono text-amber-300">
+                        {sgRdpOpenCount}
+                      </span>{" "}
+                      • Web 80/443 world-open:{" "}
+                      <span className="font-mono text-amber-300">
+                        {sgWebOpenCount}
+                      </span>
+                    </p>
+
+
+                    <div className="border border-slate-800/60 rounded-md bg-black/40">
+                      <table className="w-full text-[11px]">
+                        <thead className="bg-slate-900/80 text-gray-300 text-[10px]">
+                          <tr>
+                            <th className="px-2 py-1 text-left w-[180px]">Name</th>
+                            <th className="px-2 py-1 text-left w-[160px]">Group ID</th>
+                            <th className="px-2 py-1 text-left w-[80px]">Inbound</th>
+                            <th className="px-2 py-1 text-left w-[70px]">Risk</th>
+                          </tr>
+                        </thead>
+
+                        <tbody>
+                          {sgGroups.map((g) => (
+                            <React.Fragment key={g.group_id}>
+                              {/* Main row */}
+                              <tr className="border-t border-slate-800/60">
+                                {/* Name */}
+                                <td className="px-2 py-1.5 text-xs text-gray-200 align-top">
+                                  <div
+                                    className="truncate font-medium"
+                                    title={g.name || g.group_id}
+                                  >
+                                    {g.name || "—"}
+                                  </div>
+                                  {g.description && (
+                                    <div className="text-[10px] text-gray-500 truncate">
+                                      {g.description}
+                                    </div>
+                                  )}
+                                </td>
+
+                                {/* Group ID */}
+                                <td className="px-2 py-1.5 font-mono text-[10px] text-gray-300 whitespace-nowrap align-top">
+                                  {g.group_id}
+                                </td>
+
+                                {/* Inbound rules count – opens modal */}
+                                <td className="px-2 py-1.5 align-top">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedSecurityGroup(g);
+                                      setShowSgModal(true);
+                                    }}
+                                    className="inline-flex items-center justify-center rounded-full border border-slate-600 bg-slate-900/80 px-2 py-0.5 text-[10px] text-slate-100 hover:bg-slate-800"
+                                  >
+                                    {(g.inbound_count ?? g.inbound_rules?.length ?? 0)} rules
+                                  </button>
+                                </td>
+
+                                {/* Risk */}
+                                <td className="px-2 py-1.5 align-top">
+                                  {renderSecurityGroupRisk(g)}
+                                </td>
+                              </tr>
+
+                              {/* Exposure detail row (full width) */}
+                              <tr className="border-t border-slate-900/60">
+                                <td
+                                  colSpan={4}
+                                  className="px-2 py-1.5 text-[10px] text-gray-200 bg-slate-950/40"
+                                >
+                                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                                    {/* World / restricted */}
+                                    {g.world_open ? (
+                                      <span className="inline-flex items-center gap-1 text-red-300">
+                                        🌐 World-open
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 text-emerald-300">
+                                        🛡️ Restricted
+                                      </span>
+                                    )}
+
+                                    {/* SSH */}
+                                    <span
+                                      className={
+                                        g.ssh_22_open ? "text-red-300" : "text-emerald-300"
+                                      }
+                                    >
+                                      SSH {g.ssh_22_open ? "open" : "closed"}
+                                    </span>
+
+                                    {/* RDP */}
+                                    <span
+                                      className={
+                                        g.rdp_3389_open ? "text-red-300" : "text-emerald-300"
+                                      }
+                                    >
+                                      RDP {g.rdp_3389_open ? "open" : "closed"}
+                                    </span>
+
+                                    {/* Web */}
+                                    <span
+                                      className={
+                                        Array.isArray(g.web_ports) && g.web_ports.length > 0
+                                          ? "text-amber-300"
+                                          : "text-gray-400"
+                                      }
+                                    >
+                                      Web{" "}
+                                      {Array.isArray(g.web_ports) && g.web_ports.length > 0
+                                        ? g.web_ports.join(", ")
+                                        : "—"}
+                                    </span>
+                                  </div>
+                                </td>
+                              </tr>
+                            </React.Fragment>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                )}
+
+
+
+
 
                         {/* VPC / network inventory */}
                         {vpcInventory && (
@@ -2068,6 +2303,105 @@ export default function App({ user, onLogout }) {
           </section>
         </div>
       </main>
+
+      {/* SG inbound rules modal */}
+      {showSgModal && selectedSecurityGroup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+          <div className="bg-slate-950 border border-slate-700 rounded-2xl max-w-2xl w-full mx-4 p-5 shadow-xl shadow-black/50">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-100">
+                Inbound rules –{" "}
+                {selectedSecurityGroup.name || selectedSecurityGroup.group_id}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowSgModal(false);
+                  setSelectedSecurityGroup(null);
+                }}
+                className="text-xs text-gray-400 hover:text-gray-200"
+              >
+                Close
+              </button>
+            </div>
+
+            <p className="text-[11px] text-gray-400 mb-2">
+              Showing inbound rules for this security group. Review any entries
+              that allow broad access (0.0.0.0/0 or ::/0), especially on SSH,
+              RDP, or web ports.
+            </p>
+
+            <div className="border border-slate-800 rounded-md bg-black/50 max-h-72 overflow-auto">
+              <table className="w-full text-[11px]">
+                <thead className="bg-slate-900/80 text-gray-300">
+                  <tr>
+                    <th className="px-2 py-1 text-left">Protocol</th>
+                    <th className="px-2 py-1 text-left">Port(s)</th>
+                    <th className="px-2 py-1 text-left">Source</th>
+                    <th className="px-2 py-1 text-left">Description</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(selectedSecurityGroup.inbound_rules || []).length > 0 ? (
+                    selectedSecurityGroup.inbound_rules.map((r, idx) => {
+                      // Try to normalize fields for display
+                      const proto = r.protocol ?? r.IpProtocol ?? "-";
+                      const from = r.from_port ?? r.FromPort;
+                      const to = r.to_port ?? r.ToPort;
+                      const portRange =
+                        from === undefined && to === undefined
+                          ? "All"
+                          : from === to
+                          ? from
+                          : `${from}–${to}`;
+                      const cidr =
+                        r.cidr ??
+                        r.CidrIp ??
+                        r.CidrIpv6 ??
+                        r.source ??
+                        "-";
+                      const desc =
+                        r.description ??
+                        r.Description ??
+                        r.desc ??
+                        "";
+
+                      return (
+                        <tr
+                          key={idx}
+                          className="border-t border-slate-800/60"
+                        >
+                          <td className="px-2 py-1 text-gray-300">
+                            {proto}
+                          </td>
+                          <td className="px-2 py-1 text-gray-300">
+                            {portRange}
+                          </td>
+                          <td className="px-2 py-1 text-gray-300">
+                            {cidr}
+                          </td>
+                          <td className="px-2 py-1 text-gray-400">
+                            {desc || "—"}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={4}
+                        className="px-2 py-3 text-center text-gray-500 text-[11px]"
+                      >
+                        No inbound rules found for this security group.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

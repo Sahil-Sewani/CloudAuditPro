@@ -25,6 +25,7 @@ from .aws import (
     get_ec2_inventory,
     get_vpc_inventory,
     get_rds_inventory,
+    get_sg_inventory
 )
 from .report import build_summary, render_s3_section
 
@@ -473,6 +474,22 @@ def inventory_rds(
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/inventory/sg")
+def inventory_sg(
+    inp: ScanInput,
+    current_user: models.User = Depends(get_current_user),
+):
+    """
+    Security Group inventory for a single AWS account / region.
+    """
+    try:
+        creds = assume_customer_role(inp.account_id, inp.role_name)
+        data = get_sg_inventory(creds, inp.region)
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.post("/checks/cloudtrail")
