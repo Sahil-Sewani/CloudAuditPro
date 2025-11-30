@@ -717,12 +717,21 @@ const sgGroupsRaw =
 
 const sgGroups = Array.isArray(sgGroupsRaw) ? sgGroupsRaw : [];
 
+// World-open SGs
 const sgWorldOpenCount = sgGroups.filter((g) => g.world_open).length;
-const sgSshOpenCount = sgGroups.filter((g) => g.ssh_22_open).length;
-const sgRdpOpenCount = sgGroups.filter((g) => g.rdp_3389_open).length;
+
+// SSH 22: world vs any
+const sgSshWorldOpenCount = sgGroups.filter((g) => g.ssh_open).length;
+const sgSshAnyOpenCount = sgGroups.filter((g) => g.ssh_any_open).length;
+
+// RDP (world-exposed)
+const sgRdpOpenCount = sgGroups.filter((g) => g.rdp_open).length;
+
+// Web 80/443 (world-exposed)
 const sgWebOpenCount = sgGroups.filter(
   (g) => Array.isArray(g.web_ports) && g.web_ports.length > 0
 ).length;
+
 
 
   // Pulse color for overall score
@@ -1611,26 +1620,31 @@ const sgWebOpenCount = sgGroups.filter(
                       Security groups
                     </h3>
 
-                    <p className="text-xs text-gray-300 mb-1">
+                    <p className="text-[11.3px] text-gray-300 mb-1">
                       Groups:{" "}
                       <span className="font-mono">{sgInventory.count}</span>{" "}
                       • World-open SGs:{" "}
                       <span className="font-mono text-red-300">
                         {sgWorldOpenCount}
                       </span>{" "}
-                      • SSH 22 world-open:{" "}
-                      <span className="font-mono text-amber-300">
-                        {sgSshOpenCount}
+                      • SSH 22 (world):{" "}
+                      <span className="font-mono text-red-300">
+                        {sgSshWorldOpenCount}
                       </span>{" "}
-                      • RDP 3389 world-open:{" "}
+                      • SSH 22 (any):{" "}
+                      <span className="font-mono text-amber-300">
+                        {sgSshAnyOpenCount}
+                      </span>{" "}
+                      • RDP 3389 (world):{" "}
                       <span className="font-mono text-amber-300">
                         {sgRdpOpenCount}
                       </span>{" "}
-                      • Web 80/443 world-open:{" "}
+                      • Web 80/443 (world):{" "}
                       <span className="font-mono text-amber-300">
                         {sgWebOpenCount}
                       </span>
                     </p>
+
 
 
                     <div className="border border-slate-800/60 rounded-md bg-black/40">
@@ -1689,58 +1703,100 @@ const sgWebOpenCount = sgGroups.filter(
                                 </td>
                               </tr>
 
-                              {/* Exposure detail row (full width) */}
-                              <tr className="border-t border-slate-900/60">
-                                <td
-                                  colSpan={4}
-                                  className="px-2 py-1.5 text-[10px] text-gray-200 bg-slate-950/40"
-                                >
-                                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                                    {/* World / restricted */}
-                                    {g.world_open ? (
-                                      <span className="inline-flex items-center gap-1 text-red-300">
-                                        🌐 World-open
-                                      </span>
-                                    ) : (
-                                      <span className="inline-flex items-center gap-1 text-emerald-300">
-                                        🛡️ Restricted
-                                      </span>
-                                    )}
+                        {/* Exposure detail row (full width) */}
+                        <tr className="border-t border-slate-900/60">
+                          <td
+                            colSpan={4}
+                            className="px-2 py-1.5 text-[10px] text-gray-200 bg-slate-950/40"
+                          >
+                            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                              {/* World / restricted */}
+                              {g.world_open ? (
+                                <span className="inline-flex items-center gap-1 text-red-300">
+                                  🌐 <span className="font-semibold">World-open</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-emerald-300">
+                                  🛡️ <span className="font-semibold">Restricted</span>
+                                </span>
+                              )}
 
-                                    {/* SSH */}
-                                    <span
-                                      className={
-                                        g.ssh_22_open ? "text-red-300" : "text-emerald-300"
-                                      }
-                                    >
-                                      SSH {g.ssh_22_open ? "open" : "closed"}
-                                    </span>
+                              {/* SSH – world vs any vs closed */}
+                              {g.ssh_open ? (
+                                <span className="inline-flex items-center gap-1 text-red-300">
+                                  <span className="font-semibold">SSH</span>
+                                  <span className="px-1.5 py-0.5 rounded-full bg-red-500/10 border border-red-500/40 text-[9px] uppercase tracking-wide">
+                                    world-open
+                                  </span>
+                                </span>
+                              ) : g.ssh_any_open ? (
+                                <span className="inline-flex items-center gap-1 text-amber-300">
+                                  <span className="font-semibold">SSH</span>
+                                  <span className="px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/40 text-[9px] uppercase tracking-wide">
+                                    open (restricted)
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-emerald-300">
+                                  <span className="font-semibold">SSH</span>
+                                  <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/40 text-[9px] uppercase tracking-wide">
+                                    closed
+                                  </span>
+                                </span>
+                              )}
 
-                                    {/* RDP */}
-                                    <span
-                                      className={
-                                        g.rdp_3389_open ? "text-red-300" : "text-emerald-300"
-                                      }
-                                    >
-                                      RDP {g.rdp_3389_open ? "open" : "closed"}
-                                    </span>
+                              {/* RDP – world vs any vs closed */}
+                              {g.rdp_open ? (
+                                <span className="inline-flex items-center gap-1 text-red-300">
+                                  <span className="font-semibold">RDP</span>
+                                  <span className="px-1.5 py-0.5 rounded-full bg-red-500/10 border border-red-500/40 text-[9px] uppercase tracking-wide">
+                                    world-open
+                                  </span>
+                                </span>
+                              ) : g.rdp_any_open ? (
+                                <span className="inline-flex items-center gap-1 text-amber-300">
+                                  <span className="font-semibold">RDP</span>
+                                  <span className="px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/40 text-[9px] uppercase tracking-wide">
+                                    open (restricted)
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-emerald-300">
+                                  <span className="font-semibold">RDP</span>
+                                  <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/40 text-[9px] uppercase tracking-wide">
+                                    closed
+                                  </span>
+                                </span>
+                              )}
 
-                                    {/* Web */}
-                                    <span
-                                      className={
-                                        Array.isArray(g.web_ports) && g.web_ports.length > 0
-                                          ? "text-amber-300"
-                                          : "text-gray-400"
-                                      }
-                                    >
-                                      Web{" "}
-                                      {Array.isArray(g.web_ports) && g.web_ports.length > 0
-                                        ? g.web_ports.join(", ")
-                                        : "—"}
-                                    </span>
-                                  </div>
-                                </td>
-                              </tr>
+                              {/* Web – world vs any vs closed */}
+                              {g.http_open || g.https_open ? (
+                                <span className="inline-flex items-center gap-1 text-amber-300">
+                                  <span className="font-semibold">Web 80/443</span>
+                                  <span className="px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/40 text-[9px] uppercase tracking-wide">
+                                    world-open
+                                  </span>
+                                </span>
+                              ) : g.web_any_open ? (
+                                <span className="inline-flex items-center gap-1 text-amber-300">
+                                  <span className="font-semibold">Web 80/443</span>
+                                  <span className="px-1.5 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/40 text-[9px] uppercase tracking-wide">
+                                    open (restricted)
+                                  </span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-gray-400">
+                                  <span className="font-semibold">Web 80/443</span>
+                                  <span className="px-1.5 py-0.5 rounded-full bg-slate-700/40 border border-slate-600/60 text-[9px] uppercase tracking-wide">
+                                    closed
+                                  </span>
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+
+
                             </React.Fragment>
                           ))}
                         </tbody>

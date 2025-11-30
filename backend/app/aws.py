@@ -586,92 +586,138 @@ def _normalize_sg_rules(sg: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 def get_sg_inventory(creds: dict, region: str = DEFAULT_REGION) -> dict:
     """
-    Security Group inventory with exposure flags + normalized rules.
-
-    Returned shape (what the frontend expects):
-
-    {
-      "count": 2,
-      "groups": [
-        {
-          "group_id": "...",
-          "name": "...",
-          "description": "...",
-          "inbound_count": 2,
-          "inbound_rules": [ ... rules ... ],
-          "world_open": true/false,
-          "ssh_22_open": true/false,   # 22 world-open
-          "rdp_3389_open": true/false, # 3389 world-open
-          "web_ports": [80, 443]       # world-open web ports
-        },
-        ...
-      ]
-    }
+    Security Group inventory with:
+      - world_open (any 0.0.0.0/0 or ::/0)
+      - ssh_open  (SSH 22 world-open)
+      - ssh_any_open (SSH 22 open to any *non-world* CIDR)
+      - rdp_open / rdp_any_open
+      - http_open / https_open (world)
+      - web_any_open (80/443 open to any non-world CIDR)
+      - world_ports: list of world-exposed ports
+      - inbound_rules: flattened rules for UI
+      - inbound_count: number of inbound rules
+      - cidr_list / port_ranges: summary exposure details
     """
     ec2 = ec2_client_from_creds(creds, region)
-    groups: List[dict] = []
+    sgs: List[dict] = []
 
     paginator = ec2.get_paginator("describe_security_groups")
-    page_iterator = paginator.paginate()
 
-    for page in page_iterator:
+    for page in paginator.paginate():
         for sg in page.get("SecurityGroups", []):
-            perms = sg.get("IpPermissions", []) or []
+            perms = sg.get("IpPermissions") or []
 
             # Normalized rules for the modal
-            rules = _normalize_sg_rules(sg)
+            normalized_rules = _normalize_sg_rules(sg)
 
+            # World exposure flags
             world_open = False
-            ssh_open = False
-            rdp_open = False
-            http_open = False
-            https_open = False
+            ssh_world_open = False
+            rdp_world_open = False
+            http_world_open = False
+            https_world_open = False
+
+            # Any-open flags (non-world)
+            ssh_any_open = False
+            rdp_any_open = False
+            web_any_open = False  # any 80 or 443
+
             world_ports: set[int] = set()
+            cidr_list: List[str] = []
+            port_ranges: List[str] = []
 
             for perm in perms:
-                # Only consider world-exposed CIDRs for these flags
-                if not _perm_allows_world(perm):
-                    continue
+                is_world = _perm_allows_world(perm)
+                from_p = perm.get("FromPort")
+                to_p = perm.get("ToPort", from_p)
 
-                world_open = True
+                # Collect CIDRs (world or not)
+                for r in perm.get("IpRanges", []):
+                    cidr = r.get("CidrIp")
+                    if cidr:
+                        cidr_list.append(cidr)
+                for r in perm.get("Ipv6Ranges", []):
+                    cidr = r.get("CidrIpv6")
+                    if cidr:
+                        cidr_list.append(cidr)
 
-                if "FromPort" in perm and perm.get("FromPort") is not None:
+                # Track port range string
+                if from_p is not None:
+                    port_ranges.append(f"{from_p}-{to_p or from_p}")
+
                     try:
-                        from_p = int(perm.get("FromPort"))
-                        to_p = int(perm.get("ToPort", from_p))
+                        fp = int(from_p)
+                        tp = int(to_p or from_p)
                     except (TypeError, ValueError):
-                        continue
+                        fp = tp = None
+                    else:
+                        # For world rules, collect exposed ports
+                        if is_world:
+                            for p in range(fp, min(tp, fp + 1000) + 1):
+                                world_ports.add(p)
 
-                    # Collect world-exposed ports (bounded range for sanity)
-                    for p in range(from_p, min(to_p, from_p + 1000) + 1):
-                        world_ports.add(p)
+                        def covers(port: int) -> bool:
+                            return fp is not None and fp <= port <= tp
 
-                    if _perm_matches_port(perm, 22):
-                        ssh_open = True
-                    if _perm_matches_port(perm, 3389):
-                        rdp_open = True
-                    if _perm_matches_port(perm, 80):
-                        http_open = True
-                    if _perm_matches_port(perm, 443):
-                        https_open = True
+                        # SSH 22
+                        if covers(22):
+                            if is_world:
+                                ssh_world_open = True
+                            else:
+                                ssh_any_open = True
 
-            groups.append(
+                        # RDP 3389
+                        if covers(3389):
+                            if is_world:
+                                rdp_world_open = True
+                            else:
+                                rdp_any_open = True
+
+                        # Web 80/443
+                        if covers(80) or covers(443):
+                            if is_world:
+                                if covers(80):
+                                    http_world_open = True
+                                if covers(443):
+                                    https_world_open = True
+                            else:
+                                web_any_open = True
+
+                if is_world:
+                    world_open = True
+
+            sgs.append(
                 {
-                    "group_id": sg.get("GroupId"),
-                    "name": sg.get("GroupName"),
+                    "group_id": sg["GroupId"],
+                    "group_name": sg.get("GroupName"),
                     "description": sg.get("Description"),
-                    "inbound_count": len(rules),
-                    "inbound_rules": rules,
+
+                    # Inbound rules for UI
+                    "inbound_rules": normalized_rules,
+                    "inbound_count": len(normalized_rules),
+
+                    # World-exposure indicators
                     "world_open": world_open,
-                    # these are *world-open* flags for summary badges
-                    "ssh_22_open": ssh_open,
-                    "rdp_3389_open": rdp_open,
-                    # frontend uses this for the Web badge
-                    "web_ports": sorted(p for p in world_ports if p in (80, 443)),
+                    "ssh_open": ssh_world_open,
+                    "rdp_open": rdp_world_open,
+                    "http_open": http_world_open,
+                    "https_open": https_world_open,
+                    "world_ports": sorted(world_ports),
+
+                    # Any-open indicators (non-world)
+                    "ssh_any_open": ssh_any_open,
+                    "rdp_any_open": rdp_any_open,
+                    "web_any_open": web_any_open,
+
+                    # Raw detail lists (for later UI)
+                    "cidr_list": cidr_list,
+                    "port_ranges": port_ranges,
                 }
             )
 
     return {
-        "count": len(groups),
-        "groups": groups,
+        "count": len(sgs),
+        "security_groups": sgs,
     }
+
+
