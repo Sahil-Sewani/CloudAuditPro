@@ -24,6 +24,9 @@ export default function App({ user, onLogout }) {
   const [region, setRegion] = useState("us-east-1");
   const [emailTo, setEmailTo] = useState("");
 
+  // Use the selected region for console links, with a safe default
+  const consoleRegion = region || "us-east-1";
+
   // --------- Saved AWS accounts (multi-account) ----------
   const [awsAccounts, setAwsAccounts] = useState([]);
   const [selectedAwsAccountId, setSelectedAwsAccountId] = useState("");
@@ -677,13 +680,14 @@ export default function App({ user, onLogout }) {
   };
 
   const renderSecurityGroupRisk = (g) => {
-    // These booleans should come from your backend payload
     const worldOpen = !!g.world_open;
-    const sshOpen = !!g.ssh_22_open;
-    const rdpOpen = !!g.rdp_3389_open;
-    const webOpen = Array.isArray(g.web_ports) && g.web_ports.length > 0;
+    const sshWorld = !!g.ssh_open;   // from backend
+    const rdpWorld = !!g.rdp_open;   // from backend
+    const webWorld =
+      Array.isArray(g.world_ports) &&
+      g.world_ports.some((p) => p === 80 || p === 443);
   
-    if (worldOpen && (sshOpen || rdpOpen || webOpen)) {
+    if (worldOpen && (sshWorld || rdpWorld || webWorld)) {
       return (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-red-900/50 border border-red-500/70 text-red-200">
           🔥 <span>High</span>
@@ -705,6 +709,7 @@ export default function App({ user, onLogout }) {
       </span>
     );
   };
+  
 
 // --------- Derived summary for Security Groups ----------
 // Support a few possible shapes from the backend just in case
@@ -1493,18 +1498,17 @@ const sgWebWorldOpenCount = sgGroups.filter(
                       </div>
                     )}
 
-                    {!scanResult &&
-                      !s3Summary &&
-                      !cloudTrailResult &&
-                      !configResult &&
-                      !ebsResult &&
-                      !iamResult && (
+                    {!anyResultsForGuidance &&
+                      !ec2Inventory &&
+                      !vpcInventory &&
+                      !rdsInventory &&
+                      !sgInventory && (
                         <p className="text-gray-400 text-sm mb-4">
-                          No results yet. Run a scan or one of the individual
-                          checks on the left to see details and remediation
-                          guidance here.
+                          No results yet. Run a scan, an individual check, or load
+                          inventory on the left to see details and remediation guidance here.
                         </p>
                       )}
+
 
                       {/* EC2 Inventory */}
                       {ec2Inventory && (
@@ -1615,54 +1619,93 @@ const sgWebWorldOpenCount = sgGroups.filter(
                         </section>
                       )}
 
-                {/* Security groups inventory */}
-                {sgInventory && (
-                  <section className="mb-5">
-                    <h3 className="text-sm font-semibold text-gray-200 mb-1">
+              {/* Security groups inventory */}
+              {sgInventory && (
+                <section className="mb-5">
+                  {/* Header + actions */}
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <h3 className="text-sm font-semibold text-gray-200">
                       Security groups
                     </h3>
 
-                    <p className="text-[10px] text-gray-300 mb-1">
-                      Groups:{" "}
-                      <span className="font-mono">{sgInventory.count}</span>{" "}
-                      • World-open SGs:{" "}
-                      <span className="font-mono text-red-300">
-                        {sgWorldOpenCount}
-                      </span>{" "}
-                      • SSH 22 (world):{" "}
-                      <span className="font-mono text-red-300">
-                        {sgSshWorldOpenCount}
-                      </span>{" "}
-                      • SSH 22 (any):{" "}
-                      <span className="font-mono text-amber-300">
-                        {sgSshAnyOpenCount}
-                      </span>{" "}
-                      • RDP 3389 (world):{" "}
-                      <span className="font-mono text-amber-300">
-                        {sgRdpWorldOpenCount}
-                      </span>{" "}
-                      • Web 80/443 (world):{" "}
-                      <span className="font-mono text-amber-300">
-                        {sgWebWorldOpenCount}
-                      </span>
-                    </p>
+                    <div className="flex flex-wrap gap-2 text-[10px]">
+                      <a
+                        href={`https://${consoleRegion}.console.aws.amazon.com/ec2/v2/home?region=${consoleRegion}#SecurityGroups:sort=groupId`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sky-300 hover:text-sky-200 underline decoration-dotted"
+                      >
+                        View all in AWS Console
+                      </a>
+                      <a
+                        href="https://docs.aws.amazon.com/managedservices/latest/userguide/about-security-groups.html"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sky-300 hover:text-sky-200 underline decoration-dotted"
+                      >
+                        SG best practices (AWS docs)
+                      </a>
+                    </div>
+                  </div>
 
+                  {/* Tiny summary row */}
+                  <p className="text-[11px] text-gray-300 mb-1">
+                    Groups:{" "}
+                    <span className="font-mono">{sgInventory.count}</span>{" "}
+                    • World-open SGs:{" "}
+                    <span className="font-mono text-red-300">
+                      {sgWorldOpenCount}
+                    </span>{" "}
+                    • SSH 22 (world):{" "}
+                    <span className="font-mono text-red-300">
+                      {sgSshWorldOpenCount}
+                    </span>{" "}
+                    • SSH 22 (any):{" "}
+                    <span className="font-mono text-amber-300">
+                      {sgSshAnyOpenCount}
+                    </span>{" "}
+                    • RDP 3389 (world):{" "}
+                    <span className="font-mono text-amber-300">
+                      {sgRdpWorldOpenCount}
+                    </span>{" "}
+                    • Web 80/443 (world):{" "}
+                    <span className="font-mono text-amber-300">
+                      {sgWebWorldOpenCount}
+                    </span>
+                  </p>
 
+                  {/* “What’s risky” explanation */}
+                  <p className="text-[10px] text-gray-400 mb-2">
+                    <span className="font-semibold text-red-300">World-open</span> =
+                    allows <code className="font-mono">0.0.0.0/0</code> or{" "}
+                    <code className="font-mono">::/0</code> on at least one port.{" "}
+                    <span className="font-semibold text-amber-300">SSH 22 (any)</span> =
+                    port 22 is open to some CIDR (even if restricted). These are common
+                    attack-surface risks for internet-facing workloads.
+                  </p>
 
+                  <div className="border border-slate-800/60 rounded-md bg-black/40">
+                    <table className="w-full text-[11px]">
+                      <thead className="bg-slate-900/80 text-gray-300 text-[10px]">
+                        <tr>
+                          <th className="px-2 py-1 text-left w-[180px]">Name</th>
+                          <th className="px-2 py-1 text-left w-[160px]">Group ID</th>
+                          <th className="px-2 py-1 text-left w-[80px]">Inbound</th>
+                          <th className="px-2 py-1 text-left w-[70px]">Risk</th>
+                        </tr>
+                      </thead>
 
-                    <div className="border border-slate-800/60 rounded-md bg-black/40">
-                      <table className="w-full text-[11px]">
-                        <thead className="bg-slate-900/80 text-gray-300 text-[10px]">
-                          <tr>
-                            <th className="px-2 py-1 text-left w-[180px]">Name</th>
-                            <th className="px-2 py-1 text-left w-[160px]">Group ID</th>
-                            <th className="px-2 py-1 text-left w-[80px]">Inbound</th>
-                            <th className="px-2 py-1 text-left w-[70px]">Risk</th>
-                          </tr>
-                        </thead>
+                      <tbody>
+                        {sgGroups.map((g) => {
+                          // Normalized inbound count for the button
+                          const inboundCount = Array.isArray(g.inbound_rules_detail)
+                            ? g.inbound_rules_detail.length
+                            : Array.isArray(g.inbound_rules)
+                            ? g.inbound_rules.length
+                            : g.inbound_count ??
+                              (Array.isArray(g.rules) ? g.rules.length : 0);
 
-                        <tbody>
-                          {sgGroups.map((g) => (
+                          return (
                             <React.Fragment key={g.group_id}>
                               {/* Main row */}
                               <tr className="border-t border-slate-800/60">
@@ -1670,9 +1713,9 @@ const sgWebWorldOpenCount = sgGroups.filter(
                                 <td className="px-2 py-1.5 text-xs text-gray-200 align-top">
                                   <div
                                     className="truncate font-medium"
-                                    title={g.name || g.group_id}
+                                    title={g.group_name || g.group_id}
                                   >
-                                    {g.name || "—"}
+                                    {g.group_name || "—"}
                                   </div>
                                   {g.description && (
                                     <div className="text-[10px] text-gray-500 truncate">
@@ -1696,7 +1739,7 @@ const sgWebWorldOpenCount = sgGroups.filter(
                                     }}
                                     className="inline-flex items-center justify-center rounded-full border border-slate-600 bg-slate-900/80 px-2 py-0.5 text-[10px] text-slate-100 hover:bg-slate-800"
                                   >
-                                    {(g.inbound_count ?? g.inbound_rules?.length ?? 0)} rules
+                                    {inboundCount} rules
                                   </button>
                                 </td>
 
@@ -1706,99 +1749,97 @@ const sgWebWorldOpenCount = sgGroups.filter(
                                 </td>
                               </tr>
 
-                          {/* Exposure detail row (full width) */}
-                          <tr className="border-t border-slate-900/60">
-                            <td
-                              colSpan={4}
-                              className="px-2 py-1.5 text-[10px] text-gray-200 bg-slate-950/40"
-                            >
-                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                                {/* World / restricted */}
-                                {g.world_open ? (
-                                  <span className="inline-flex items-center gap-1 text-red-300">
-                                    🌐 World-open
-                                  </span>
-                                ) : (
-                                  <span className="inline-flex items-center gap-1 text-emerald-300">
-                                    🛡️ Restricted
-                                  </span>
-                                )}
-
-                                {/* SSH 22: world vs any */}
-                                <span
-                                  className={
-                                    g.ssh_open
-                                      ? "text-red-300"
-                                      : g.ssh_any_open
-                                      ? "text-amber-300"
-                                      : "text-emerald-300"
-                                  }
+                              {/* Exposure detail row (full width) */}
+                              <tr className="border-t border-slate-900/60">
+                                <td
+                                  colSpan={4}
+                                  className="px-2 py-1.5 text-[10px] text-gray-200 bg-slate-950/40"
                                 >
-                                  SSH 22:{" "}
-                                  {g.ssh_open
-                                    ? "world-open"
-                                    : g.ssh_any_open
-                                    ? "open (restricted CIDRs)"
-                                    : "closed"}
-                                </span>
+                                  <div className="flex flex-wrap items-center justify-between gap-y-1 gap-x-4">
+                                    {/* Left side: exposure badges */}
+                                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                                      {/* World / restricted */}
+                                      {g.world_open ? (
+                                        <span className="inline-flex items-center gap-1 text-red-300">
+                                          🌐 World-open
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center gap-1 text-emerald-300">
+                                          🛡️ Restricted
+                                        </span>
+                                      )}
 
-                                {/* RDP 3389: any-open */}
-                                <span
-                                  className={
-                                    g.rdp_open
-                                      ? "text-red-300"
-                                      : g.rdp_any_open
-                                      ? "text-amber-300"
-                                      : "text-emerald-300"
-                                  }
-                                >
-                                  RDP 3389:{" "}
-                                  {g.rdp_open
-                                    ? "world-open"
-                                    : g.rdp_any_open
-                                    ? "open (restricted CIDRs)"
-                                    : "closed"}
-                                </span>
+                                      {/* SSH */}
+                                      <span
+                                        className={
+                                          g.ssh_any_open ? "text-amber-300" : "text-emerald-300"
+                                        }
+                                      >
+                                        SSH 22:{" "}
+                                        {g.ssh_any_open ? "open (restricted CIDRs)" : "closed"}
+                                      </span>
 
-                                {/* Web 80/443: any-open */}
-                                <span
-                                  className={
-                                    g.web_any_open
-                                      ? "text-amber-300"
-                                      : "text-gray-400"
-                                  }
-                                >
-                                  Web 80/443:{" "}
-                                  {g.web_any_open ? "open" : "closed"}
-                                </span>
+                                      {/* RDP */}
+                                      <span
+                                        className={
+                                          g.rdp_any_open ? "text-amber-300" : "text-emerald-300"
+                                        }
+                                      >
+                                        RDP 3389: {g.rdp_any_open ? "open" : "closed"}
+                                      </span>
 
-                                {/* CIDRs summary */}
-                                {Array.isArray(g.cidr_list) && g.cidr_list.length > 0 && (
-                                  <span
-                                    className="text-gray-300 truncate max-w-[220px]"
-                                    title={g.cidr_list.join(", ")}
-                                  >
-                                    CIDRs: {g.cidr_list.length}
-                                  </span>
-                                )}
+                                      {/* Web 80/443 world */}
+                                      <span
+                                        className={
+                                          Array.isArray(g.world_ports) &&
+                                          g.world_ports.some((p) => p === 80 || p === 443)
+                                            ? "text-amber-300"
+                                            : "text-gray-400"
+                                        }
+                                      >
+                                        Web 80/443:{" "}
+                                        {Array.isArray(g.world_ports) &&
+                                        g.world_ports.some((p) => p === 80 || p === 443)
+                                          ? "open"
+                                          : "closed"}
+                                      </span>
 
-                                {/* Port ranges summary */}
-                                {Array.isArray(g.port_ranges) && g.port_ranges.length > 0 && (
-                                  <span
-                                    className="text-gray-400 truncate max-w-[220px]"
-                                    title={g.port_ranges.join(", ")}
-                                  >
-                                    Ports: {g.port_ranges.join(", ")}
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
+                                      {/* Ports / CIDR quick glance (optional) */}
+                                      {Array.isArray(g.port_ranges) &&
+                                        g.port_ranges.length > 0 && (
+                                          <span className="text-gray-400">
+                                            Ports: {g.port_ranges.join(", ")}
+                                          </span>
+                                        )}
+                                      {Array.isArray(g.cidr_list) &&
+                                        g.cidr_list.length > 0 && (
+                                          <span className="text-gray-400">
+                                            CIDRs: {g.cidr_list.length}
+                                          </span>
+                                        )}
+                                    </div>
+
+                                    {/* Right side: per-SG console link */}
+                                    <div>
+                                      <a
+                                        href={`https://${consoleRegion}.console.aws.amazon.com/ec2/v2/home?region=${consoleRegion}#SecurityGroup:groupId=${g.group_id}`}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="text-[10px] text-sky-300 hover:text-sky-200 underline decoration-dotted"
+                                      >
+                                        Open in AWS Console →
+                                      </a>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+
 
 
 
                             </React.Fragment>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
