@@ -65,7 +65,10 @@ export default function App({ user, onLogout }) {
   const [loadingRds, setLoadingRds] = useState(false);
   const [loadingSg, setLoadingSg] = useState(false);
   const [selectedSecurityGroup, setSelectedSecurityGroup] = useState(null);
-  const [showSgModal, setShowSgModal] = useState(false);  
+  const [showSgModal, setShowSgModal] = useState(false);
+  const [attackSurface, setAttackSurface] = useState(null);
+  const [loadingAttackSurface, setLoadingAttackSurface] = useState(false); 
+  const [showSgHelp, setShowSgHelp] = useState(false); 
 
   // --------- Loading + error ----------
   const [loadingScan, setLoadingScan] = useState(false);
@@ -100,7 +103,8 @@ export default function App({ user, onLogout }) {
     loadingEc2 ||
     loadingVpc ||
     loadingRds ||
-    loadingSg;
+    loadingSg ||
+    loadingAttackSurface;
 
   const markCheckRun = (id) => {
     setChecksRun((prev) => (prev.includes(id) ? prev : [...prev, id]));
@@ -240,6 +244,7 @@ export default function App({ user, onLogout }) {
     setVpcInventory(null);
     setRdsInventory(null);
     setSgInventory(null);
+    setAttackSurface(null);
   }, [accountId, roleName, region]);
 
   // --------- Action handlers ----------
@@ -563,6 +568,30 @@ export default function App({ user, onLogout }) {
       setLoadingSg(false);
     }
   };
+
+  const handleAttackSurface = async () => {
+    setLoadingAttackSurface(true);
+    setError("");
+    setAttackSurface(null);
+
+    try {
+      const data = await apiFetch("/inventory/attack-surface", {
+        token,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(commonBody),
+      });
+      setAttackSurface(data);
+      markCheckRun("attack_surface");
+    } catch (err) {
+      console.error("Attack surface error:", err);
+      setError(err.message || "Failed to load attack surface view");
+    } finally {
+      setLoadingAttackSurface(false);
+    }
+  };
+
+
 
 
 
@@ -1269,7 +1298,7 @@ const sgWebWorldOpenCount = sgGroups.filter(
                 </div>
 
                 {/* Inventory buttons */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-3">
                   <button
                     onClick={handleEc2Inventory}
                     disabled={loadingEc2 || !hasAccountConfig}
@@ -1301,7 +1330,17 @@ const sgWebWorldOpenCount = sgGroups.filter(
                   >
                     {loadingSg ? "Loading..." : "Security groups"}
                   </button>
+
+                  {/* 🚀 Attack surface */}
+                  <button
+                    onClick={handleAttackSurface}
+                    disabled={loadingAttackSurface || !hasAccountConfig}
+                    className="bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-white px-4 py-2 rounded text-sm"
+                  >
+                    {loadingAttackSurface ? "Loading..." : "Attack surface"}
+                  </button>
                 </div>
+
 
 
 
@@ -1619,232 +1658,414 @@ const sgWebWorldOpenCount = sgGroups.filter(
                         </section>
                       )}
 
-              {/* Security groups inventory */}
-              {sgInventory && (
-                <section className="mb-5">
-                  {/* Header + actions */}
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <h3 className="text-sm font-semibold text-gray-200">
-                      Security groups
-                    </h3>
+                        {/* Security groups inventory */}
+                        {sgInventory && (
+                          <section className="mb-5">
+                            {/* Header + actions + info pill */}
+                            <div className="flex items-center justify-between gap-2 mb-1">
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-sm font-semibold text-gray-200">
+                                  Security groups
+                                </h3>
 
-                    <div className="flex flex-wrap gap-2 text-[10px]">
-                      <a
-                        href={`https://${consoleRegion}.console.aws.amazon.com/ec2/v2/home?region=${consoleRegion}#SecurityGroups:sort=groupId`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-sky-300 hover:text-sky-200 underline decoration-dotted"
-                      >
-                        View all in AWS Console
-                      </a>
-                      <a
-                        href="https://docs.aws.amazon.com/managedservices/latest/userguide/about-security-groups.html"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-sky-300 hover:text-sky-200 underline decoration-dotted"
-                      >
-                        SG best practices (AWS docs)
-                      </a>
-                    </div>
-                  </div>
+                                {/* Small purple info pill */}
+                                <button
+                                  type="button"
+                                  onClick={() => setShowSgHelp((v) => !v)}
+                                  className="inline-flex items-center gap-1 rounded-full border border-indigo-600/70 bg-indigo-900/60 px-2 py-0.5 text-[10px] text-indigo-100 hover:bg-indigo-800/80"
+                                >
+                                  <span className="inline-flex h-3 w-3 items-center justify-center rounded-full bg-indigo-400 text-[9px] font-bold text-slate-950">
+                                    i
+                                  </span>
+                                  <span>
+                                    {showSgHelp ? "Hide exposure help" : "What counts as exposure?"}
+                                  </span>
+                                </button>
+                              </div>
 
-                  {/* Tiny summary row */}
-                  <p className="text-[11px] text-gray-300 mb-1">
-                    Groups:{" "}
-                    <span className="font-mono">{sgInventory.count}</span>{" "}
-                    • World-open SGs:{" "}
-                    <span className="font-mono text-red-300">
-                      {sgWorldOpenCount}
-                    </span>{" "}
-                    • SSH 22 (world):{" "}
-                    <span className="font-mono text-red-300">
-                      {sgSshWorldOpenCount}
-                    </span>{" "}
-                    • SSH 22 (any):{" "}
-                    <span className="font-mono text-amber-300">
-                      {sgSshAnyOpenCount}
-                    </span>{" "}
-                    • RDP 3389 (world):{" "}
-                    <span className="font-mono text-amber-300">
-                      {sgRdpWorldOpenCount}
-                    </span>{" "}
-                    • Web 80/443 (world):{" "}
-                    <span className="font-mono text-amber-300">
-                      {sgWebWorldOpenCount}
-                    </span>
-                  </p>
+                              <div className="flex flex-wrap gap-2 text-[10px]">
+                                <a
+                                  href={`https://${consoleRegion}.console.aws.amazon.com/ec2/v2/home?region=${consoleRegion}#SecurityGroups:sort=groupId`}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-sky-300 hover:text-sky-200 underline decoration-dotted"
+                                >
+                                  View all in AWS Console
+                                </a>
+                                <a
+                                  href="https://docs.aws.amazon.com/managedservices/latest/userguide/about-security-groups.html"
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-sky-300 hover:text-sky-200 underline decoration-dotted"
+                                >
+                                  SG best practices (AWS docs)
+                                </a>
+                              </div>
+                            </div>
 
-                  {/* “What’s risky” explanation */}
-                  <p className="text-[10px] text-gray-400 mb-2">
-                    <span className="font-semibold text-red-300">World-open</span> =
-                    allows <code className="font-mono">0.0.0.0/0</code> or{" "}
-                    <code className="font-mono">::/0</code> on at least one port.{" "}
-                    <span className="font-semibold text-amber-300">SSH 22 (any)</span> =
-                    port 22 is open to some CIDR (even if restricted). These are common
-                    attack-surface risks for internet-facing workloads.
-                  </p>
+                            {/* Tiny summary row */}
+                            <p className="text-[11px] text-gray-300 mb-1">
+                              Groups:{" "}
+                              <span className="font-mono">{sgInventory.count}</span>{" "}
+                              • World-open SGs:{" "}
+                              <span className="font-mono text-red-300">
+                                {sgWorldOpenCount}
+                              </span>{" "}
+                              • SSH 22 (world):{" "}
+                              <span className="font-mono text-red-300">
+                                {sgSshWorldOpenCount}
+                              </span>{" "}
+                              • SSH 22 (any):{" "}
+                              <span className="font-mono text-amber-300">
+                                {sgSshAnyOpenCount}
+                              </span>{" "}
+                              • RDP 3389 (world):{" "}
+                              <span className="font-mono text-amber-300">
+                                {sgRdpWorldOpenCount}
+                              </span>{" "}
+                              • Web 80/443 (world):{" "}
+                              <span className="font-mono text-amber-300">
+                                {sgWebWorldOpenCount}
+                              </span>
+                            </p>
 
-                  <div className="border border-slate-800/60 rounded-md bg-black/40">
-                    <table className="w-full text-[11px]">
-                      <thead className="bg-slate-900/80 text-gray-300 text-[10px]">
-                        <tr>
-                          <th className="px-2 py-1 text-left w-[180px]">Name</th>
-                          <th className="px-2 py-1 text-left w-[160px]">Group ID</th>
-                          <th className="px-2 py-1 text-left w-[80px]">Inbound</th>
-                          <th className="px-2 py-1 text-left w-[70px]">Risk</th>
-                        </tr>
-                      </thead>
+                            {/* Collapsible “what is risky” box */}
+                            {showSgHelp && (
+                              <div className="mb-2 rounded-md border border-slate-700/70 bg-slate-950/70 px-3 py-2">
+                                <p className="text-[11px] text-gray-300 leading-snug">
+                                  <strong className="text-red-300">Potential exposure</strong>{" "}
+                                  means this security group allows world-open access (
+                                  <code className="font-mono">0.0.0.0/0</code> or{" "}
+                                  <code className="font-mono">::/0</code>) on at least one port.
+                                </p>
+                                <p className="text-[10px] text-gray-400 leading-snug mt-1">
+                                  Even private instances using this SG can become internet-reachable
+                                  if they ever receive a public IP or sit behind a public load balancer.
+                                  Lock down SSH/RDP and keep web ports to only what’s required.
+                                </p>
+                              </div>
+                            )}
 
-                      <tbody>
-                        {sgGroups.map((g) => {
-                          // Normalized inbound count for the button
-                          const inboundCount = Array.isArray(g.inbound_rules_detail)
-                            ? g.inbound_rules_detail.length
-                            : Array.isArray(g.inbound_rules)
-                            ? g.inbound_rules.length
-                            : g.inbound_count ??
-                              (Array.isArray(g.rules) ? g.rules.length : 0);
+                            <div className="border border-slate-800/60 rounded-md bg-black/40">
+                              <table className="w-full text-[11px]">
+                                <thead className="bg-slate-900/80 text-gray-300 text-[10px]">
+                                  <tr>
+                                    <th className="px-2 py-1 text-left w-[180px]">Name</th>
+                                    <th className="px-2 py-1 text-left w-[160px]">Group ID</th>
+                                    <th className="px-2 py-1 text-left w-[80px]">Inbound</th>
+                                    <th className="px-2 py-1 text-left w-[70px]">Risk</th>
+                                  </tr>
+                                </thead>
+
+                                <tbody>
+                                  {sgGroups.map((g) => {
+                                    // Normalized inbound count for the button
+                                    const inboundCount = Array.isArray(g.inbound_rules_detail)
+                                      ? g.inbound_rules_detail.length
+                                      : Array.isArray(g.inbound_rules)
+                                      ? g.inbound_rules.length
+                                      : g.inbound_count ??
+                                        (Array.isArray(g.rules) ? g.rules.length : 0);
+
+                                    const hasPotentialExposure =
+                                      g.world_open ||
+                                      g.ssh_open ||
+                                      g.rdp_open ||
+                                      (Array.isArray(g.world_ports) && g.world_ports.length > 0);
+
+                                    return (
+                                      <React.Fragment key={g.group_id}>
+                                        {/* Main row */}
+                                        <tr className="border-t border-slate-800/60">
+                                          {/* Name */}
+                                          <td className="px-2 py-1.5 text-xs text-gray-200 align-top">
+                                            <div
+                                              className="truncate font-medium"
+                                              title={g.group_name || g.group_id}
+                                            >
+                                              {g.group_name || "—"}
+                                            </div>
+                                            {g.description && (
+                                              <div className="text-[10px] text-gray-500 truncate">
+                                                {g.description}
+                                              </div>
+                                            )}
+                                          </td>
+
+                                          {/* Group ID */}
+                                          <td className="px-2 py-1.5 font-mono text-[10px] text-gray-300 whitespace-nowrap align-top">
+                                            {g.group_id}
+                                          </td>
+
+                                          {/* Inbound rules count – opens modal */}
+                                          <td className="px-2 py-1.5 align-top">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setSelectedSecurityGroup(g);
+                                                setShowSgModal(true);
+                                              }}
+                                              className="inline-flex items-center justify-center rounded-full border border-slate-600 bg-slate-900/80 px-2 py-0.5 text-[10px] text-slate-100 hover:bg-slate-800"
+                                            >
+                                              {inboundCount} rules
+                                            </button>
+                                          </td>
+
+                                          {/* Risk */}
+                                          <td className="px-2 py-1.5 align-top">
+                                            <div className="flex flex-col gap-1">
+                                              {renderSecurityGroupRisk(g)}
+
+                                              {hasPotentialExposure && (
+                                                <span className="inline-flex items-center gap-1 text-amber-300 text-[10px] font-medium">
+                                                  ⚠ Potential exposure
+                                                </span>
+                                              )}
+                                            </div>
+                                          </td>
+                                        </tr>
+
+                                        {/* Exposure detail row (full width) */}
+                                        <tr className="border-t border-slate-900/60">
+                                          <td
+                                            colSpan={4}
+                                            className="px-2 py-1.5 text-[10px] text-gray-200 bg-slate-950/40"
+                                          >
+                                            <div className="flex flex-wrap items-center justify-between gap-y-1 gap-x-4">
+                                              {/* Left side: exposure badges */}
+                                              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                                                {/* World / restricted */}
+                                                {g.world_open ? (
+                                                  <span className="inline-flex items-center gap-1 text-red-300">
+                                                    🌐 World-open
+                                                  </span>
+                                                ) : (
+                                                  <span className="inline-flex items-center gap-1 text-emerald-300">
+                                                    🛡️ Restricted
+                                                  </span>
+                                                )}
+
+                                                {/* SSH */}
+                                                <span
+                                                  className={
+                                                    g.ssh_any_open ? "text-amber-300" : "text-emerald-300"
+                                                  }
+                                                >
+                                                  SSH 22:{" "}
+                                                  {g.ssh_any_open ? "open (restricted CIDRs)" : "closed"}
+                                                </span>
+
+                                                {/* RDP */}
+                                                <span
+                                                  className={
+                                                    g.rdp_any_open ? "text-amber-300" : "text-emerald-300"
+                                                  }
+                                                >
+                                                  RDP 3389: {g.rdp_any_open ? "open" : "closed"}
+                                                </span>
+
+                                                {/* Web 80/443 world */}
+                                                <span
+                                                  className={
+                                                    Array.isArray(g.world_ports) &&
+                                                    g.world_ports.some((p) => p === 80 || p === 443)
+                                                      ? "text-amber-300"
+                                                      : "text-gray-400"
+                                                  }
+                                                >
+                                                  Web 80/443:{" "}
+                                                  {Array.isArray(g.world_ports) &&
+                                                  g.world_ports.some((p) => p === 80 || p === 443)
+                                                    ? "open"
+                                                    : "closed"}
+                                                </span>
+
+                                                {/* Ports / CIDR quick glance (optional) */}
+                                                {Array.isArray(g.port_ranges) &&
+                                                  g.port_ranges.length > 0 && (
+                                                    <span className="text-gray-400">
+                                                      Ports: {g.port_ranges.join(", ")}
+                                                    </span>
+                                                  )}
+                                                {Array.isArray(g.cidr_list) &&
+                                                  g.cidr_list.length > 0 && (
+                                                    <span className="text-gray-400">
+                                                      CIDRs: {g.cidr_list.length}
+                                                    </span>
+                                                  )}
+                                              </div>
+
+                                              {/* Right side: per-SG console link */}
+                                              <div>
+                                                <a
+                                                  href={`https://${consoleRegion}.console.aws.amazon.com/ec2/v2/home?region=${consoleRegion}#SecurityGroup:groupId=${g.group_id}`}
+                                                  target="_blank"
+                                                  rel="noreferrer"
+                                                  className="text-[10px] text-sky-300 hover:text-sky-200 underline decoration-dotted"
+                                                >
+                                                  Open in AWS Console →
+                                                </a>
+                                              </div>
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      </React.Fragment>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </section>
+                        )}
+
+
+                    {/* Attack surface view */}
+                    {attackSurface && (
+                      <section className="mb-5">
+                        <h3 className="text-sm font-semibold text-gray-200 mb-1">
+                          Attack surface
+                        </h3>
+
+                        {(() => {
+                          const summary = attackSurface.summary || attackSurface;
+                          const instances =
+                            Array.isArray(attackSurface.instances)
+                              ? attackSurface.instances
+                              : Array.isArray(attackSurface.public_instances)
+                              ? attackSurface.public_instances
+                              : [];
+
+                          const publicCount =
+                            summary.public_instance_count ??
+                            summary.public_instances ??
+                            instances.length;
+
+                          const riskySgCount =
+                            summary.risky_sg_count ??
+                            summary.world_open_sg_count ??
+                            summary.world_open_groups ??
+                            0;
 
                           return (
-                            <React.Fragment key={g.group_id}>
-                              {/* Main row */}
-                              <tr className="border-t border-slate-800/60">
-                                {/* Name */}
-                                <td className="px-2 py-1.5 text-xs text-gray-200 align-top">
-                                  <div
-                                    className="truncate font-medium"
-                                    title={g.group_name || g.group_id}
-                                  >
-                                    {g.group_name || "—"}
-                                  </div>
-                                  {g.description && (
-                                    <div className="text-[10px] text-gray-500 truncate">
-                                      {g.description}
-                                    </div>
-                                  )}
-                                </td>
+                            <>
+                              <p className="text-xs text-gray-300 mb-2">
+                                Public instances:{" "}
+                                <span className="font-mono">
+                                  {publicCount}
+                                </span>{" "}
+                                • World-open security groups:{" "}
+                                <span className="font-mono text-red-300">
+                                  {riskySgCount}
+                                </span>
+                              </p>
 
-                                {/* Group ID */}
-                                <td className="px-2 py-1.5 font-mono text-[10px] text-gray-300 whitespace-nowrap align-top">
-                                  {g.group_id}
-                                </td>
+                              <p className="text-[10px] text-gray-400 mb-2">
+                                Focus on instances with a public IP and world-open
+                                ports like{" "}
+                                <span className="font-mono">22</span> (SSH) or{" "}
+                                <span className="font-mono">3389</span> (RDP). These
+                                are the most common entry points for attackers.
+                              </p>
 
-                                {/* Inbound rules count – opens modal */}
-                                <td className="px-2 py-1.5 align-top">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedSecurityGroup(g);
-                                      setShowSgModal(true);
-                                    }}
-                                    className="inline-flex items-center justify-center rounded-full border border-slate-600 bg-slate-900/80 px-2 py-0.5 text-[10px] text-slate-100 hover:bg-slate-800"
-                                  >
-                                    {inboundCount} rules
-                                  </button>
-                                </td>
+                              {instances.length === 0 ? (
+                                <div className="rounded-md bg-slate-900/60 px-3 py-2 text-[11px] text-emerald-300">
+                                  No public instances with risky exposure detected
+                                  in this region.
+                                </div>
+                              ) : (
+                                <div className="border border-slate-800/60 rounded-md bg-black/40 overflow-hidden">
+                                  <table className="w-full table-fixed text-[11px]">
+                                    <thead className="bg-slate-900/80 text-gray-300 text-[10px]">
+                                      <tr>
+                                        <th className="px-2 py-1 text-left">
+                                          Name
+                                        </th>
+                                        <th className="px-2 py-1 text-left w-[140px]">
+                                          Instance ID
+                                        </th>
+                                        <th className="px-2 py-1 text-left w-[110px]">
+                                          Public IP
+                                        </th>
+                                        <th className="px-2 py-1 text-left w-[120px]">
+                                          World-open ports
+                                        </th>
+                                        <th className="px-2 py-1 text-left w-[160px]">
+                                          Security groups
+                                        </th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {instances.map((inst) => {
+                                        const worldPorts =
+                                          inst.world_open_ports ||
+                                          inst.risky_ports ||
+                                          [];
+                                        const sgsRaw =
+                                          inst.security_groups ||
+                                          inst.attached_security_groups ||
+                                          [];
+                                        const sgs = Array.isArray(sgsRaw)
+                                          ? sgsRaw
+                                          : [];
+                                        return (
+                                          <tr
+                                            key={inst.instance_id}
+                                            className="border-t border-slate-800/60"
+                                          >
+                                            <td className="px-2 py-1.5 text-xs text-gray-200">
+                                              <span
+                                                className="block max-w-[200px] truncate"
+                                                title={inst.name || inst.instance_id}
+                                              >
+                                                {inst.name || "—"}
+                                              </span>
+                                            </td>
+                                            <td className="px-2 py-1.5 font-mono text-[10px] text-gray-300 whitespace-nowrap">
+                                              {inst.instance_id}
+                                            </td>
+                                            <td className="px-2 py-1.5 font-mono text-[10px] text-gray-300 whitespace-nowrap">
+                                              {inst.public_ip || "—"}
+                                            </td>
+                                            <td className="px-2 py-1.5 text-[10px] text-gray-200 whitespace-nowrap">
+                                              {worldPorts.length > 0 ? (
+                                                <span className="text-amber-300">
+                                                  {worldPorts.join(", ")}
+                                                </span>
+                                              ) : (
+                                                <span className="text-gray-400">
+                                                  —
+                                                </span>
+                                              )}
+                                            </td>
+                                            <td className="px-2 py-1.5 text-[10px] text-gray-200">
+                                              {sgs.length === 0 ? (
+                                                <span className="text-gray-400">
+                                                  —
+                                                </span>
+                                              ) : (
+                                                <span className="block max-w-[220px] truncate">
+                                                  {sgs
+                                                    .map(
+                                                      (g) =>
+                                                        g.group_name || g.group_id
+                                                    )
+                                                    .join(", ")}
+                                                </span>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </section>
+                    )}
 
-                                {/* Risk */}
-                                <td className="px-2 py-1.5 align-top">
-                                  {renderSecurityGroupRisk(g)}
-                                </td>
-                              </tr>
-
-                              {/* Exposure detail row (full width) */}
-                              <tr className="border-t border-slate-900/60">
-                                <td
-                                  colSpan={4}
-                                  className="px-2 py-1.5 text-[10px] text-gray-200 bg-slate-950/40"
-                                >
-                                  <div className="flex flex-wrap items-center justify-between gap-y-1 gap-x-4">
-                                    {/* Left side: exposure badges */}
-                                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                                      {/* World / restricted */}
-                                      {g.world_open ? (
-                                        <span className="inline-flex items-center gap-1 text-red-300">
-                                          🌐 World-open
-                                        </span>
-                                      ) : (
-                                        <span className="inline-flex items-center gap-1 text-emerald-300">
-                                          🛡️ Restricted
-                                        </span>
-                                      )}
-
-                                      {/* SSH */}
-                                      <span
-                                        className={
-                                          g.ssh_any_open ? "text-amber-300" : "text-emerald-300"
-                                        }
-                                      >
-                                        SSH 22:{" "}
-                                        {g.ssh_any_open ? "open (restricted CIDRs)" : "closed"}
-                                      </span>
-
-                                      {/* RDP */}
-                                      <span
-                                        className={
-                                          g.rdp_any_open ? "text-amber-300" : "text-emerald-300"
-                                        }
-                                      >
-                                        RDP 3389: {g.rdp_any_open ? "open" : "closed"}
-                                      </span>
-
-                                      {/* Web 80/443 world */}
-                                      <span
-                                        className={
-                                          Array.isArray(g.world_ports) &&
-                                          g.world_ports.some((p) => p === 80 || p === 443)
-                                            ? "text-amber-300"
-                                            : "text-gray-400"
-                                        }
-                                      >
-                                        Web 80/443:{" "}
-                                        {Array.isArray(g.world_ports) &&
-                                        g.world_ports.some((p) => p === 80 || p === 443)
-                                          ? "open"
-                                          : "closed"}
-                                      </span>
-
-                                      {/* Ports / CIDR quick glance (optional) */}
-                                      {Array.isArray(g.port_ranges) &&
-                                        g.port_ranges.length > 0 && (
-                                          <span className="text-gray-400">
-                                            Ports: {g.port_ranges.join(", ")}
-                                          </span>
-                                        )}
-                                      {Array.isArray(g.cidr_list) &&
-                                        g.cidr_list.length > 0 && (
-                                          <span className="text-gray-400">
-                                            CIDRs: {g.cidr_list.length}
-                                          </span>
-                                        )}
-                                    </div>
-
-                                    {/* Right side: per-SG console link */}
-                                    <div>
-                                      <a
-                                        href={`https://${consoleRegion}.console.aws.amazon.com/ec2/v2/home?region=${consoleRegion}#SecurityGroup:groupId=${g.group_id}`}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="text-[10px] text-sky-300 hover:text-sky-200 underline decoration-dotted"
-                                      >
-                                        Open in AWS Console →
-                                      </a>
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-
-
-
-
-                            </React.Fragment>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </section>
-                )}
 
 
 

@@ -706,3 +706,137 @@ def get_sg_inventory(creds: dict, region: str = DEFAULT_REGION) -> dict:
         "count": len(sgs),
         "security_groups": sgs,
     }
+
+def build_attack_surface(creds: dict, region: str = DEFAULT_REGION) -> dict:
+    """
+    Build an 'attack surface' view for EC2 instances:
+
+    - Only considers instances with a public IP and state 'running'
+    - Looks at attached security groups
+    - For each SG, looks at normalized inbound rules
+    - Tracks ports that are world-open (0.0.0.0/0 or ::/0)
+    """
+
+    ec2 = ec2_client_from_creds(creds, region)
+
+    # 1) Collect public-running instances + their SGs
+    instances: list[dict] = []
+    paginator = ec2.get_paginator("describe_instances")
+
+    all_sg_ids: set[str] = set()
+
+    for page in paginator.paginate():
+        for reservation in page.get("Reservations", []):
+            for inst in reservation.get("Instances", []):
+                state = (inst.get("State") or {}).get("Name")
+                public_ip = inst.get("PublicIpAddress")
+
+                if state != "running" or not public_ip:
+                    continue
+
+                instance_id = inst.get("InstanceId")
+                name = _get_tag_value(inst.get("Tags", []), "Name")
+                vpc_id = inst.get("VpcId")
+                sg_ids = [sg.get("GroupId") for sg in inst.get("SecurityGroups", []) if sg.get("GroupId")]
+
+                for sg_id in sg_ids:
+                    all_sg_ids.add(sg_id)
+
+                instances.append(
+                    {
+                        "instance_id": instance_id,
+                        "name": name,
+                        "public_ip": public_ip,
+                        "state": state,
+                        "vpc_id": vpc_id,
+                        "security_groups": sg_ids,
+                    }
+                )
+
+    if not instances or not all_sg_ids:
+        return {"items": [], "count": 0}
+
+    # 2) Describe those SGs + normalize rules
+    sg_map: dict[str, dict] = {}
+    try:
+        # describe_security_groups supports up to 1000 group IDs at once.
+        sg_ids_list = list(all_sg_ids)
+        chunk_size = 200
+        for i in range(0, len(sg_ids_list), chunk_size):
+            chunk = sg_ids_list[i : i + chunk_size]
+            resp = ec2.describe_security_groups(GroupIds=chunk)
+            for sg in resp.get("SecurityGroups", []):
+                gid = sg.get("GroupId")
+                if not gid:
+                    continue
+                normalized_rules = _normalize_sg_rules(sg)
+                sg_map[gid] = {
+                    "group_id": gid,
+                    "group_name": sg.get("GroupName"),
+                    "rules": normalized_rules,
+                }
+    except Exception:
+        # If SG describe fails, we still return what we have with empty rules.
+        for sg_id in all_sg_ids:
+            sg_map.setdefault(sg_id, {"group_id": sg_id, "group_name": None, "rules": []})
+
+    # 3) Build attack surface rows
+    items: list[dict] = []
+
+    for inst in instances:
+        world_ports: set[int] = set()
+
+        for sg_id in inst["security_groups"]:
+            sg_info = sg_map.get(sg_id) or {}
+            for rule in sg_info.get("rules") or []:
+                source = rule.get("source")
+                if source not in ("0.0.0.0/0", "::/0"):
+                    continue
+
+                from_port = rule.get("from_port")
+                to_port = rule.get("to_port", from_port)
+                if from_port is None:
+                    continue
+
+                try:
+                    fp = int(from_port)
+                    tp = int(to_port) if to_port is not None else fp
+                    for p in range(fp, min(tp, fp + 1000) + 1):
+                        world_ports.add(p)
+                except Exception:
+                    continue
+
+        ports_list = sorted(world_ports)
+        ssh_world = 22 in world_ports
+        rdp_world = 3389 in world_ports
+        web_world = any(p in (80, 443) for p in world_ports)
+
+        # Skip instances that have *no* world-open ports at all
+        if not ports_list:
+            continue
+
+        items.append(
+            {
+                "public_ip": inst["public_ip"],
+                "instance_id": inst["instance_id"],
+                "name": inst.get("name"),
+                "state": inst.get("state"),
+                "vpc_id": inst.get("vpc_id"),
+                "security_groups": [
+                    {
+                        "group_id": sg_id,
+                        "group_name": (sg_map.get(sg_id) or {}).get("group_name"),
+                    }
+                    for sg_id in inst["security_groups"]
+                ],
+                "world_ports": ports_list,
+                "ssh_world": ssh_world,
+                "rdp_world": rdp_world,
+                "web_world": web_world,
+            }
+        )
+
+    return {
+        "items": items,
+        "count": len(items),
+    }
