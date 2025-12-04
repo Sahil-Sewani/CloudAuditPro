@@ -767,6 +767,33 @@ const sgWebWorldOpenCount = sgGroups.filter(
     g.world_ports.some((p) => p === 80 || p === 443)
 ).length;
 
+// --------- Derived summary for VPC inventory ----------
+const vpcsRaw =
+  (vpcInventory &&
+    (vpcInventory.vpcs || vpcInventory.items)) ||
+  vpcInventory ||
+  [];
+
+const vpcList = Array.isArray(vpcsRaw) ? vpcsRaw : [];
+const vpcCount =
+  vpcInventory && typeof vpcInventory.count === "number"
+    ? vpcInventory.count
+    : vpcList.length;
+
+// --------- Derived summary for RDS inventory ----------
+const rdsRaw =
+  (rdsInventory &&
+    (rdsInventory.instances || rdsInventory.items)) ||
+  rdsInventory ||
+  [];
+
+const rdsInstances = Array.isArray(rdsRaw) ? rdsRaw : [];
+const rdsCount =
+  rdsInventory && typeof rdsInventory.count === "number"
+    ? rdsInventory.count
+    : rdsInstances.length;
+
+
 
 
 
@@ -1658,6 +1685,355 @@ const sgWebWorldOpenCount = sgGroups.filter(
                         </section>
                       )}
 
+{/* VPC / network */}
+{vpcInventory &&
+  (() => {
+    const vpcs = Array.isArray(vpcInventory.vpcs)
+      ? vpcInventory.vpcs
+      : [];
+
+    const vpcsWithDefaultRoute = vpcs.filter((v) =>
+      (v.route_tables || []).some((rt) => rt.has_0_0_0_0_route)
+    ).length;
+
+    const totalIgws = vpcs.reduce((sum, v) => {
+      const igws = Array.isArray(v.internet_gateways)
+        ? v.internet_gateways
+        : Array.isArray(v.igws)
+        ? v.igws
+        : [];
+      return sum + igws.length;
+    }, 0);
+
+    const internetFacingVpcs = vpcs.filter((v) => {
+      const igws = Array.isArray(v.internet_gateways)
+        ? v.internet_gateways
+        : Array.isArray(v.igws)
+        ? v.igws
+        : [];
+      const routeTables = Array.isArray(v.route_tables)
+        ? v.route_tables
+        : [];
+      const openRtCount = routeTables.filter(
+        (rt) => rt.has_0_0_0_0_route
+      ).length;
+      return igws.length > 0 && openRtCount > 0;
+    }).length;
+
+    return (
+      <section className="mb-5">
+        {/* Header row */}
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-gray-200">
+              VPC / network
+            </h3>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-slate-900 border border-slate-700 text-[10px] text-slate-200">
+              {consoleRegion || region}
+            </span>
+          </div>
+
+          <a
+            href={`https://${consoleRegion}.console.aws.amazon.com/vpc/home?region=${consoleRegion}#vpcs:sort=VpcId`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[10px] text-sky-300 hover:text-sky-200 underline decoration-dotted"
+          >
+            View VPCs in AWS Console →
+          </a>
+        </div>
+
+        {/* Small KPI strip */}
+        <p className="text-[11px] text-gray-300 mb-1">
+          VPCs:{" "}
+          <span className="font-mono">{vpcInventory.count}</span>{" "}
+          • With 0.0.0.0/0 routes:{" "}
+          <span className="font-mono text-amber-300">
+            {vpcsWithDefaultRoute}
+          </span>{" "}
+          • IGWs:{" "}
+          <span className="font-mono">{totalIgws}</span>{" "}
+          • Internet-facing VPCs:{" "}
+          <span
+            className={
+              internetFacingVpcs > 0
+                ? "font-mono text-amber-300"
+                : "font-mono text-emerald-300"
+            }
+          >
+            {internetFacingVpcs}
+          </span>
+        </p>
+        <p className="text-[10px] text-gray-400 mb-2">
+          A VPC is considered{" "}
+          <span className="text-amber-300 font-semibold">
+            internet-facing
+          </span>{" "}
+          when it has an Internet Gateway and at least one route table with a
+          <code className="font-mono mx-1">0.0.0.0/0</code> route.
+        </p>
+
+        <div className="border border-slate-800/60 rounded-md bg-black/40">
+          <table className="w-full text-[11px]">
+            <thead className="bg-slate-900/80 text-gray-300 text-[10px]">
+              <tr>
+                <th className="px-2 py-1 text-left w-[120px]">Name</th>
+                <th className="px-2 py-1 text-left w-[160px]">VPC ID</th>
+                <th className="px-2 py-1 text-left w-[130px]">CIDR</th>
+                <th className="px-2 py-1 text-left w-[60px]">Subnets</th>
+                <th className="px-2 py-1 text-left w-[60px]">IGWs</th>
+                <th className="px-2 py-1 text-left w-[110px]">
+                  0.0.0.0/0 routes
+                </th>
+                <th className="px-2 py-1 text-left w-[150px]">
+                  Exposure / console
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {vpcs.map((v) => {
+                const igws = Array.isArray(v.internet_gateways)
+                  ? v.internet_gateways
+                  : Array.isArray(v.igws)
+                  ? v.igws
+                  : [];
+
+                const routeTables = Array.isArray(v.route_tables)
+                  ? v.route_tables
+                  : [];
+
+                const openRtCount = routeTables.filter(
+                  (rt) => rt.has_0_0_0_0_route
+                ).length;
+
+                const hasInternetFacing = igws.length > 0 && openRtCount > 0;
+
+                // Exposure badge styling
+                let exposureLabel = "Private only";
+                let exposureEmoji = "🔒";
+                let exposureClasses =
+                  "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-emerald-900/40 border border-emerald-500/70 text-emerald-200";
+
+                if (hasInternetFacing) {
+                  exposureLabel = "Internet-facing";
+                  exposureEmoji = "🌐";
+                  exposureClasses =
+                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-amber-900/40 border border-amber-500/80 text-amber-100";
+                } else if (igws.length > 0) {
+                  exposureLabel = "IGW, no default route";
+                  exposureEmoji = "🧷";
+                  exposureClasses =
+                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-slate-900/60 border border-slate-600/80 text-slate-200";
+                }
+
+                return (
+                  <tr
+                    key={v.vpc_id}
+                    className="border-t border-slate-800/60"
+                  >
+                    {/* Name */}
+                    <td className="px-2 py-1.5 text-xs text-gray-200">
+                      <span
+                        className="block max-w-[110px] truncate"
+                        title={v.name || v.vpc_id}
+                      >
+                        {v.name || "—"}
+                      </span>
+                    </td>
+
+                    {/* VPC ID */}
+                    <td className="px-2 py-1.5 font-mono text-[10px] text-gray-300">
+                      {v.vpc_id || "—"}
+                    </td>
+
+                    {/* CIDR */}
+                    <td className="px-2 py-1.5 text-xs text-gray-300">
+                      {v.cidr_block || v.cidr || "—"}
+                    </td>
+
+                    {/* Subnets */}
+                    <td className="px-2 py-1.5 text-xs text-gray-200">
+                      {Array.isArray(v.subnets) ? v.subnets.length : 0}
+                    </td>
+
+                    {/* IGWs */}
+                    <td className="px-2 py-1.5 text-xs text-gray-200">
+                      {igws.length}
+                    </td>
+
+                    {/* 0.0.0.0/0 Route Tables */}
+                    <td className="px-2 py-1.5 text-xs text-gray-200">
+                      {openRtCount}
+                    </td>
+
+                    {/* Exposure badge + console link */}
+                    <td className="px-2 py-1.5 text-xs">
+                      <div className="flex flex-col gap-0.5">
+                        <span className={exposureClasses}>
+                          <span>{exposureEmoji}</span>
+                          <span>{exposureLabel}</span>
+                        </span>
+                        <a
+                          href={`https://${consoleRegion}.console.aws.amazon.com/vpc/home?region=${consoleRegion}#VpcDetails:VpcId=${v.vpc_id}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[10px] text-sky-300 hover:text-sky-200 underline decoration-dotted"
+                          title="Open this VPC in the AWS console"
+                        >
+                          Open in console →
+                        </a>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    );
+  })()}
+
+{/* RDS inventory */}
+{rdsInventory &&
+  (() => {
+    const instances = Array.isArray(rdsInventory.instances)
+      ? rdsInventory.instances
+      : Array.isArray(rdsInventory.db_instances)
+      ? rdsInventory.db_instances
+      : [];
+
+    return (
+      <section className="mb-5">
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <h3 className="text-sm font-semibold text-gray-200">
+            RDS inventory
+          </h3>
+          <a
+            href={`https://${consoleRegion}.console.aws.amazon.com/rds/home?region=${consoleRegion}#databases:`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[10px] text-sky-300 hover:text-sky-200 underline decoration-dotted"
+          >
+            View RDS in AWS Console →
+          </a>
+        </div>
+
+        <p className="text-[11px] text-gray-300 mb-2">
+          DB instances:{" "}
+          <span className="font-mono">
+            {rdsInventory.count ?? instances.length}
+          </span>
+        </p>
+
+        {instances.length === 0 ? (
+          <div className="rounded-md bg-slate-900/60 px-3 py-2 text-[11px] text-gray-300">
+            No RDS instances found in this region.
+          </div>
+        ) : (
+          <div className="border border-slate-800/60 rounded-md bg-black/40">
+            <table className="w-full text-[11px]">
+              <thead className="bg-slate-900/80 text-gray-300 text-[10px]">
+                <tr>
+                  <th className="px-2 py-1 text-left w-[170px]">
+                    Identifier
+                  </th>
+                  <th className="px-2 py-1 text-left w-[90px]">Engine</th>
+                  <th className="px-2 py-1 text-left w-[70px]">Public</th>
+                  <th className="px-2 py-1 text-left w-[90px]">Encryption</th>
+                  <th className="px-2 py-1 text-left w-[80px]">Multi-AZ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {instances.map((db) => {
+                  const isPublic =
+                    db.publicly_accessible ?? db.public ?? false;
+                  const encrypted =
+                    db.storage_encrypted ?? db.encrypted ?? false;
+                  const multiAz =
+                    db.multi_az ?? db.multi_az_deployment ?? false;
+
+                  return (
+                    <tr
+                      key={db.db_instance_identifier || db.identifier}
+                      className="border-t border-slate-800/60"
+                    >
+                      {/* Identifier */}
+                      <td className="px-2 py-1.5 text-xs text-gray-200">
+                        <span
+                          className="block max-w-[160px] truncate"
+                          title={
+                            db.db_instance_identifier ||
+                            db.identifier ||
+                            ""
+                          }
+                        >
+                          {db.db_instance_identifier ||
+                            db.identifier ||
+                            "—"}
+                        </span>
+                      </td>
+
+                      {/* Engine */}
+                      <td className="px-2 py-1.5 text-xs text-gray-300">
+                        {db.engine || "—"}
+                      </td>
+
+                      {/* Public badge */}
+                      <td className="px-2 py-1.5 text-xs">
+                        {isPublic ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-900/40 border border-amber-500/70 text-[10px] text-amber-100">
+                            🌐 Public
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-900/40 border border-emerald-500/70 text-[10px] text-emerald-100">
+                            🔒 Private
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Encryption badge */}
+                      <td className="px-2 py-1.5 text-xs">
+                        {encrypted ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-300">
+                            🔐 Encrypted
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-red-300">
+                            ⚠️ Not encrypted
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Multi-AZ badge */}
+                      <td className="px-2 py-1.5 text-xs">
+                        {multiAz ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-300">
+                            ✅ Yes
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-gray-400">
+                            — 
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    );
+  })()}
+
+
+
+
+
+
                         {/* Security groups inventory */}
                         {sgInventory && (
                           <section className="mb-5">
@@ -1919,295 +2295,230 @@ const sgWebWorldOpenCount = sgGroups.filter(
                         )}
 
 
-                    {/* Attack surface view */}
-                    {attackSurface && (
-                      <section className="mb-5">
-                        <h3 className="text-sm font-semibold text-gray-200 mb-1">
-                          Attack surface
-                        </h3>
+{/* Attack surface view */}
+{attackSurface &&
+  (() => {
+    const summary = attackSurface.summary || attackSurface;
 
-                        {(() => {
-                          const summary = attackSurface.summary || attackSurface;
-                          const instances =
-                            Array.isArray(attackSurface.instances)
-                              ? attackSurface.instances
-                              : Array.isArray(attackSurface.public_instances)
-                              ? attackSurface.public_instances
-                              : [];
+    const instances = Array.isArray(attackSurface.instances)
+      ? attackSurface.instances
+      : Array.isArray(attackSurface.public_instances)
+      ? attackSurface.public_instances
+      : [];
 
-                          const publicCount =
-                            summary.public_instance_count ??
-                            summary.public_instances ??
-                            instances.length;
+    const publicCount =
+      summary.public_instance_count ??
+      summary.public_instances ??
+      instances.length;
 
-                          const riskySgCount =
-                            summary.risky_sg_count ??
-                            summary.world_open_sg_count ??
-                            summary.world_open_groups ??
-                            0;
+    const riskySgCount =
+      summary.risky_sg_count ??
+      summary.world_open_sg_count ??
+      summary.world_open_groups ??
+      0;
 
-                          return (
-                            <>
-                              <p className="text-xs text-gray-300 mb-2">
-                                Public instances:{" "}
-                                <span className="font-mono">
-                                  {publicCount}
-                                </span>{" "}
-                                • World-open security groups:{" "}
-                                <span className="font-mono text-red-300">
-                                  {riskySgCount}
-                                </span>
-                              </p>
+    // Overall exposure badge
+    let exposureLabel = "Low external exposure";
+    let exposureEmoji = "✅";
+    let exposureClasses =
+      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-emerald-900/40 border border-emerald-500/70 text-emerald-200";
 
-                              <p className="text-[10px] text-gray-400 mb-2">
-                                Focus on instances with a public IP and world-open
-                                ports like{" "}
-                                <span className="font-mono">22</span> (SSH) or{" "}
-                                <span className="font-mono">3389</span> (RDP). These
-                                are the most common entry points for attackers.
-                              </p>
+    if (publicCount > 0 && riskySgCount > 0) {
+      exposureLabel = "High external exposure";
+      exposureEmoji = "🔥";
+      exposureClasses =
+        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-red-900/50 border border-red-500/80 text-red-100";
+    } else if (publicCount > 0 || riskySgCount > 0) {
+      exposureLabel = "Some exposure";
+      exposureEmoji = "⚠️";
+      exposureClasses =
+        "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-amber-900/40 border border-amber-500/80 text-amber-100";
+    }
 
-                              {instances.length === 0 ? (
-                                <div className="rounded-md bg-slate-900/60 px-3 py-2 text-[11px] text-emerald-300">
-                                  No public instances with risky exposure detected
-                                  in this region.
-                                </div>
-                              ) : (
-                                <div className="border border-slate-800/60 rounded-md bg-black/40 overflow-hidden">
-                                  <table className="w-full table-fixed text-[11px]">
-                                    <thead className="bg-slate-900/80 text-gray-300 text-[10px]">
-                                      <tr>
-                                        <th className="px-2 py-1 text-left">
-                                          Name
-                                        </th>
-                                        <th className="px-2 py-1 text-left w-[140px]">
-                                          Instance ID
-                                        </th>
-                                        <th className="px-2 py-1 text-left w-[110px]">
-                                          Public IP
-                                        </th>
-                                        <th className="px-2 py-1 text-left w-[120px]">
-                                          World-open ports
-                                        </th>
-                                        <th className="px-2 py-1 text-left w-[160px]">
-                                          Security groups
-                                        </th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {instances.map((inst) => {
-                                        const worldPorts =
-                                          inst.world_open_ports ||
-                                          inst.risky_ports ||
-                                          [];
-                                        const sgsRaw =
-                                          inst.security_groups ||
-                                          inst.attached_security_groups ||
-                                          [];
-                                        const sgs = Array.isArray(sgsRaw)
-                                          ? sgsRaw
-                                          : [];
-                                        return (
-                                          <tr
-                                            key={inst.instance_id}
-                                            className="border-t border-slate-800/60"
-                                          >
-                                            <td className="px-2 py-1.5 text-xs text-gray-200">
-                                              <span
-                                                className="block max-w-[200px] truncate"
-                                                title={inst.name || inst.instance_id}
-                                              >
-                                                {inst.name || "—"}
-                                              </span>
-                                            </td>
-                                            <td className="px-2 py-1.5 font-mono text-[10px] text-gray-300 whitespace-nowrap">
-                                              {inst.instance_id}
-                                            </td>
-                                            <td className="px-2 py-1.5 font-mono text-[10px] text-gray-300 whitespace-nowrap">
-                                              {inst.public_ip || "—"}
-                                            </td>
-                                            <td className="px-2 py-1.5 text-[10px] text-gray-200 whitespace-nowrap">
-                                              {worldPorts.length > 0 ? (
-                                                <span className="text-amber-300">
-                                                  {worldPorts.join(", ")}
-                                                </span>
-                                              ) : (
-                                                <span className="text-gray-400">
-                                                  —
-                                                </span>
-                                              )}
-                                            </td>
-                                            <td className="px-2 py-1.5 text-[10px] text-gray-200">
-                                              {sgs.length === 0 ? (
-                                                <span className="text-gray-400">
-                                                  —
-                                                </span>
-                                              ) : (
-                                                <span className="block max-w-[220px] truncate">
-                                                  {sgs
-                                                    .map(
-                                                      (g) =>
-                                                        g.group_name || g.group_id
-                                                    )
-                                                    .join(", ")}
-                                                </span>
-                                              )}
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                            </>
-                          );
-                        })()}
-                      </section>
-                    )}
+    return (
+      <section className="mb-5">
+        {/* Header row */}
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-gray-200">
+              Attack surface
+            </h3>
+            <span className={exposureClasses}>
+              <span>{exposureEmoji}</span>
+              <span>{exposureLabel}</span>
+            </span>
+          </div>
 
+          <a
+            href={`https://${consoleRegion}.console.aws.amazon.com/ec2/v2/home?region=${consoleRegion}#Instances:sort=instanceId`}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[10px] text-sky-300 hover:text-sky-200 underline decoration-dotted"
+          >
+            View EC2 in AWS Console
+          </a>
+        </div>
 
+        <p className="text-xs text-gray-300 mb-1">
+          Public instances:{" "}
+          <span className="font-mono">{publicCount}</span> •
+          World-open security groups attached:{" "}
+          <span className="font-mono text-red-300">
+            {riskySgCount}
+          </span>
+        </p>
 
+        <p className="text-[10px] text-gray-400 mb-2">
+          Focus on instances with a public IP and world-open ports
+          like <span className="font-mono">22</span> (SSH) or{" "}
+          <span className="font-mono">3389</span> (RDP). These are
+          the most common entry points for attackers.
+        </p>
 
+        {instances.length === 0 ? (
+          <div className="rounded-md bg-slate-900/60 px-3 py-2 text-[11px] text-emerald-300">
+            No public instances with risky exposure detected in
+            this region.
+          </div>
+        ) : (
+          <div className="border border-slate-800/60 rounded-md bg-black/40 overflow-hidden">
+            <table className="w-full table-fixed text-[11px]">
+              <thead className="bg-slate-900/80 text-gray-300 text-[10px]">
+                <tr>
+                  <th className="px-2 py-1 text-left">Name</th>
+                  <th className="px-2 py-1 text-left w-[150px]">
+                    Instance ID
+                  </th>
+                  <th className="px-2 py-1 text-left w-[110px]">
+                    Public IP
+                  </th>
+                  <th className="px-2 py-1 text-left w-[120px]">
+                    World-open ports
+                  </th>
+                  <th className="px-2 py-1 text-left w-[160px]">
+                    Security groups
+                  </th>
+                  <th className="px-2 py-1 text-left w-[80px]">
+                    Risk
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {instances.map((inst) => {
+                  const worldPorts = Array.isArray(
+                    inst.world_open_ports || inst.risky_ports
+                  )
+                    ? inst.world_open_ports || inst.risky_ports
+                    : [];
 
+                  const sgsRaw =
+                    inst.security_groups ||
+                    inst.attached_security_groups ||
+                    [];
+                  const sgs = Array.isArray(sgsRaw) ? sgsRaw : [];
 
-                        {/* VPC / network inventory */}
-                        {vpcInventory && (
-                          <section className="mb-5">
-                            <h3 className="text-sm font-semibold text-gray-200 mb-1">
-                              VPC / network
-                            </h3>
-                            <p className="text-xs text-gray-300 mb-2">
-                              VPCs:{" "}
-                              <span className="font-mono">
-                                {vpcInventory.count}
-                              </span>
-                            </p>
+                  const hasSsh = worldPorts.includes(22);
+                  const hasRdp = worldPorts.includes(3389);
+                  const hasWeb = worldPorts.some(
+                    (p) => p === 80 || p === 443
+                  );
 
-                            <div className="border border-slate-800/60 rounded-md bg-black/40 overflow-hidden">
-                              <table className="w-full table-fixed text-[11px]">
-                                <thead className="bg-slate-900/80 text-gray-300 text-[10px]">
-                                  <tr>
-                                    <th className="px-2 py-1 text-left">Name</th>
-                                    <th className="px-2 py-1 text-left w-[150px]">VPC ID</th>
-                                    <th className="px-2 py-1 text-left w-[120px]">CIDR</th>
-                                    <th className="px-2 py-1 text-left w-[70px]">Subnets</th>
-                                    <th className="px-2 py-1 text-left w-[60px]">IGWs</th>
-                                    <th className="px-2 py-1 text-left w-[110px]">
-                                      <span className="block leading-tight">Route tables</span>
-                                      <span className="block leading-tight">with 0.0.0.0/0</span>
-                                    </th>
-                                  </tr>
-                                </thead>
+                  let riskLabel = "Low";
+                  let riskEmoji = "✅";
+                  let riskClasses =
+                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-emerald-900/40 border border-emerald-500/70 text-emerald-200";
 
-                                <tbody>
-                                  {vpcInventory.vpcs.map((v) => {
-                                    const openRouteTables =
-                                      (v.route_tables || []).filter((rt) => rt.has_0_0_0_0_route)
-                                        .length;
+                  if (hasSsh || hasRdp) {
+                    riskLabel = "High";
+                    riskEmoji = "🔥";
+                    riskClasses =
+                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-red-900/50 border border-red-500/80 text-red-100";
+                  } else if (hasWeb || worldPorts.length > 0) {
+                    riskLabel = "Medium";
+                    riskEmoji = "⚠️";
+                    riskClasses =
+                      "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-amber-900/40 border border-amber-500/80 text-amber-100";
+                  }
 
-                                    return (
-                                      <tr
-                                        key={v.vpc_id}
-                                        className="border-t border-slate-800/60"
-                                      >
-                                        {/* Name */}
-                                        <td className="px-2 py-1.5 text-xs text-gray-200">
-                                          <span
-                                            className="block max-w-[200px] truncate"
-                                            title={v.name || v.vpc_id}
-                                          >
-                                            {v.name || "—"}
-                                          </span>
-                                        </td>
+                  return (
+                    <tr
+                      key={inst.instance_id}
+                      className="border-t border-slate-800/60"
+                    >
+                      {/* Name */}
+                      <td className="px-2 py-1.5 text-xs text-gray-200">
+                        <span
+                          className="block max-w-[200px] truncate"
+                          title={inst.name || inst.instance_id}
+                        >
+                          {inst.name || "—"}
+                        </span>
+                      </td>
 
-                                        {/* VPC ID */}
-                                        <td className="px-2 py-1.5 font-mono text-[10px] text-gray-200 whitespace-nowrap">
-                                          {v.vpc_id}
-                                        </td>
-
-                                        {/* CIDR */}
-                                        <td className="px-2 py-1.5 text-xs text-gray-300 whitespace-nowrap">
-                                          {v.cidr_block}
-                                        </td>
-
-                                        {/* Subnets */}
-                                        <td className="px-2 py-1.5 text-xs text-gray-300 whitespace-nowrap">
-                                          {v.subnets?.length ?? 0}
-                                        </td>
-
-                                        {/* IGWs */}
-                                        <td className="px-2 py-1.5 text-xs text-gray-300 whitespace-nowrap">
-                                          {v.internet_gateways?.length ?? 0}
-                                        </td>
-
-                                        {/* Route tables with 0.0.0.0/0 */}
-                                        <td className="px-2 py-1.5 text-xs text-gray-300 whitespace-nowrap">
-                                          {openRouteTables}
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
-                            </div>
-                          </section>
-                        )}
-
-
-
-                    {/* RDS inventory */}
-                    {rdsInventory && (
-                      <section className="mb-5">
-                        <h3 className="text-sm font-semibold text-gray-200 mb-1">
-                          RDS inventory
-                        </h3>
-                        <p className="text-xs text-gray-300 mb-2">
-                          DB instances:{" "}
-                          <span className="font-mono">
-                            {rdsInventory.count}
+                      {/* Instance ID + console link */}
+                      <td className="px-2 py-1.5 text-[10px] text-gray-300 align-top">
+                        <div className="flex flex-col gap-0.5">
+                          <span className="font-mono whitespace-nowrap">
+                            {inst.instance_id}
                           </span>
-                        </p>
-                        <div className="border border-slate-800/60 rounded-md bg-black/40">
-                          <table className="min-w-full">
-                          <thead className="bg-slate-900/80 text-gray-300 text-[11px]">
-                              <tr>
-                              <th className="px-2 py-1 text-left">Name</th>
-                              <th className="px-2 py-1 text-left">Instance ID</th>
-                              <th className="px-2 py-1 text-left">Type</th>
-                              <th className="px-2 py-1 text-left">State</th>
-                              <th className="px-2 py-1 text-left">Public exposure</th>
-                              <th className="px-2 py-1 text-left">Root encryption</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {rdsInventory.instances.map((db) => (
-                                <tr key={db.id} className="border-t border-slate-800/60">
-                                  <td className="px-2 py-1 font-mono text-gray-300">
-                                    {db.id}
-                                  </td>
-                                  <td className="px-2 py-1 text-gray-300">
-                                    {db.engine} {db.engine_version}
-                                  </td>
-                                  <td className="px-2 py-1 text-gray-300">
-                                    {db.storage_encrypted ? "🔐" : "⚠️"}
-                                  </td>
-                                  <td className="px-2 py-1 text-gray-300">
-                                    {db.publicly_accessible ? "🌐" : "🔒"}
-                                  </td>
-                                  <td className="px-2 py-1 text-gray-300">
-                                    {db.backup_retention_period || 0} days
-                                  </td>
-                                  <td className="px-2 py-1 text-gray-300">
-                                    {db.multi_az ? "✅" : "—"}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                          <a
+                            href={`https://${consoleRegion}.console.aws.amazon.com/ec2/v2/home?region=${consoleRegion}#InstanceDetails:instanceId=${inst.instance_id}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] text-sky-300 hover:text-sky-200 underline decoration-dotted"
+                          >
+                            Open in console →
+                          </a>
                         </div>
-                      </section>
-                    )}
+                      </td>
+
+                      {/* Public IP */}
+                      <td className="px-2 py-1.5 font-mono text-[10px] text-gray-300 whitespace-nowrap">
+                        {inst.public_ip || "—"}
+                      </td>
+
+                      {/* World-open ports */}
+                      <td className="px-2 py-1.5 text-[10px] text-gray-200 whitespace-nowrap">
+                        {worldPorts.length > 0 ? (
+                          <span className="text-amber-300">
+                            {worldPorts.join(", ")}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
+
+                      {/* SG list */}
+                      <td className="px-2 py-1.5 text-[10px] text-gray-200">
+                        {sgs.length === 0 ? (
+                          <span className="text-gray-400">—</span>
+                        ) : (
+                          <span className="block max-w-[220px] truncate">
+                            {sgs
+                              .map((g) => g.group_name || g.group_id)
+                              .join(", ")}
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Risk badge */}
+                      <td className="px-2 py-1.5 text-[10px]">
+                        <span className={riskClasses}>
+                          <span>{riskEmoji}</span>
+                          <span>{riskLabel}</span>
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    );
+  })()}
+
 
 
                     {/* Security Hub */}
