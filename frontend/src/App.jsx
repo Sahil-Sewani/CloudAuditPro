@@ -15,6 +15,84 @@ const CHECK_LABELS = {
   compliance: "Compliance score",
 };
 
+const FRAMEWORK_LABELS = {
+  cis: "CIS AWS Benchmark",
+  pci: "PCI DSS",
+  soc2: "SOC 2",
+};
+
+const FRAMEWORK_CONTROLS = {
+  cis: [
+    "security_hub",
+    "s3_baseline",
+    "cloudtrail",
+    "config",
+    "ebs_encryption",
+    "iam_password_policy",
+  ],
+  pci: [
+    "cloudtrail",
+    "config",
+    "ebs_encryption",
+    "iam_password_policy",
+    "s3_baseline",
+  ],
+  soc2: [
+    "security_hub",
+    "cloudtrail",
+    "config",
+    "ebs_encryption",
+    "iam_password_policy",
+  ],
+};
+
+// For guidance text per framework + control
+const FRAMEWORK_FIX_GUIDANCE = {
+  cis: {
+    security_hub:
+      "Resolve all open Security Hub findings mapped to CIS AWS Foundations checks.",
+    s3_baseline:
+      "Ensure no S3 buckets are public and that default encryption is enabled (CIS 2.x).",
+    cloudtrail:
+      "Enable at least one multi-region CloudTrail with log file validation (CIS 2.1).",
+    config:
+      "Enable AWS Config and configure a recorder for all resources in all regions (CIS 2.5).",
+    ebs_encryption:
+      "Turn on EBS default encryption and migrate any unencrypted volumes.",
+    iam_password_policy:
+      "Configure an IAM account password policy meeting CIS complexity/rotation requirements.",
+  },
+  pci: {
+    security_hub:
+      "Use Security Hub to continuously monitor PCI-relevant controls and findings.",
+    s3_baseline:
+      "Ensure cardholder data buckets are not public and are encrypted at rest (PCI DSS 3.x).",
+    cloudtrail:
+      "Enable CloudTrail logging for all PCI-scoped resources to support PCI DSS 10.x logging.",
+    config:
+      "Use AWS Config to track configuration drift on PCI-scoped resources.",
+    ebs_encryption:
+      "Encrypt all volumes that may store cardholder data; enforce default encryption.",
+    iam_password_policy:
+      "Enforce strong password policies for IAM users with PCI-relevant access.",
+  },
+  soc2: {
+    security_hub:
+      "Use Security Hub as a central source of evidence for SOC 2 security controls.",
+    s3_baseline:
+      "Encrypt S3 data at rest and avoid public buckets that may expose customer data.",
+    cloudtrail:
+      "Ensure CloudTrail is enabled org-wide to provide audit evidence for SOC 2 CC7.x.",
+    config:
+      "Use AWS Config to demonstrate ongoing monitoring of changes to in-scope resources.",
+    ebs_encryption:
+      "Encrypt EBS volumes that may store customer or confidential data.",
+    iam_password_policy:
+      "Ensure password policies or SSO enforcement meet SOC 2 access control requirements.",
+  },
+};
+
+
 export default function App({ user, onLogout }) {
   const { token } = useAuth();
 
@@ -23,6 +101,12 @@ export default function App({ user, onLogout }) {
   const [roleName, setRoleName] = useState("CloudAuditProReadRole");
   const [region, setRegion] = useState("us-east-1");
   const [emailTo, setEmailTo] = useState("");
+  const [framework, setFramework] = useState(() => {
+    if (typeof window === "undefined") return "cis";
+    return localStorage.getItem("cap_framework") || "cis";
+  });
+
+
 
   // Use the selected region for console links, with a safe default
   const consoleRegion = region || "us-east-1";
@@ -88,8 +172,12 @@ export default function App({ user, onLogout }) {
 
   const commonBody = {
     account_id: accountId,
-    role_name: roleName,
-    region: region,
+    role_name: roleName || "CloudAuditProReadRole",
+    region,
+    // Optional extras if you have these in state:
+    // start_iso: startIso,
+    // end_iso: endIso,
+    email_to: emailTo || null,
   };
 
   const isSyncing =
@@ -116,6 +204,13 @@ export default function App({ user, onLogout }) {
     const timer = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  // --------- Persist framework selection ----------
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("cap_framework", framework);
+    }
+  }, [framework]);
 
   // --------- Fetch saved AWS accounts for this user ----------
   useEffect(() => {
@@ -196,12 +291,15 @@ export default function App({ user, onLogout }) {
     try {
       setLoadingCompliance(true);
       setError("");
-
+  
       const data = await apiFetch("/compliance/summary", {
         token,
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(commonBody),
+        body: JSON.stringify({
+          ...commonBody,
+          framework, // "cis" | "pci" | "soc2"
+        }),
       });
 
       setComplianceSummary(data);
@@ -683,8 +781,30 @@ export default function App({ user, onLogout }) {
 
   // --------- Compliance helpers ----------
   const score = complianceSummary ? complianceSummary.score ?? 0 : 0;
-  const scorePercent = Math.round(score); // already 0–100 from backend
+  const scorePercent = Math.round(score);
   const controls = complianceSummary?.checks || [];
+  const activeFramework = complianceSummary?.framework || framework;
+  const activeFrameworkLabel =
+    FRAMEWORK_LABELS[activeFramework] || activeFramework;
+  
+  // Map checks by ID for easier lookup
+  const controlsById = controls.reduce((acc, c) => {
+    acc[c.id] = c;
+    return acc;
+    // eslint-disable-next-line no-sequences
+  }, {});
+  
+  // The canonical order of all possible controls
+  const ALL_CONTROL_ORDER = [
+    { id: "security_hub", label: "Security Hub findings" },
+    { id: "s3_baseline", label: "S3 public access & encryption" },
+    { id: "cloudtrail", label: "CloudTrail multi-region trail" },
+    { id: "config", label: "AWS Config recorder enabled" },
+    { id: "ebs_encryption", label: "EBS default encryption" },
+    { id: "iam_password_policy", label: "IAM password policy configured" },
+  ];
+  
+  
 
   const statusBadgeFromPassed = (passed) => {
     if (passed === true) {
@@ -1389,6 +1509,23 @@ const rdsCount =
                   Email yourself a report and run the overall compliance
                   score.
                 </p>
+                <div className="mb-4">
+                  <span className="block text-xs font-medium text-indigo-200 mb-1">
+                    Framework
+                  </span>
+                  <select
+                    className="mt-1 w-full bg-slate-950/80 border border-indigo-800 rounded px-3 py-2 text-xs text-indigo-50"
+                    value={framework}
+                    onChange={(e) => setFramework(e.target.value)}
+                  >
+                    <option value="cis">CIS AWS Benchmark</option>
+                    <option value="pci">PCI DSS</option>
+                    <option value="soc2">SOC 2</option>
+                  </select>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    This selection only affects the compliance score, not the raw checks.
+                  </p>
+                </div>
 
                 <label className="block mb-4 text-sm">
                   Report email (optional)
@@ -1429,86 +1566,205 @@ const rdsCount =
             {/* RIGHT: Compliance + Details + Guidance */}
             <div className="space-y-4">
               {/* Compliance Score */}
-              <div className="bg-black/40 border border-indigo-900/60 rounded-2xl p-6 shadow-lg shadow-indigo-900/40">
-                <div className="flex items-start justify-between mb-4">
+              <div className="bg-black/40 border border-indigo-900/60 rounded-2xl p-6 shadow-lg shadow-indigo-900/40 flex flex-col">
+                <div className="flex items-center justify-between mb-2">
                   <div>
                     <h2 className="text-lg font-semibold text-indigo-200">
                       Compliance Score
                     </h2>
                     <p className="text-xs text-gray-400">
-                      Based on latest compliance run
+                      {hasRunCompliance ? (
+                        <>
+                          Based on latest compliance run ·{" "}
+                          <span className="text-indigo-200">
+                            {activeFrameworkLabel}
+                          </span>
+                        </>
+                      ) : (
+                        "Run a scan to calculate your compliance score."
+                      )}
                     </p>
                   </div>
-                  <div className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      {hasRunCompliance && (
-                        <div className="relative flex h-3 w-3">
-                          <span
-                            className={`absolute inline-flex h-full w-full rounded-full ${scorePulseColor} opacity-75 animate-ping`}
-                          ></span>
-                          <span
-                            className={`relative inline-flex rounded-full h-3 w-3 ${scorePulseColor}`}
-                          ></span>
-                        </div>
-                      )}
-                      <div className="text-2xl font-bold text-emerald-400">
-                        {hasRunCompliance ? `${scorePercent}%` : "--"}
+
+                  {hasRunCompliance && (
+                    <div className="text-right">
+                      <div className="text-[11px] text-slate-400">
+                        Controls in scope:
+                      </div>
+                      <div className="text-[11px] text-slate-200 font-mono">
+                        {FRAMEWORK_CONTROLS[activeFramework]?.length || 0} /{" "}
+                        {ALL_CONTROL_ORDER.length}
                       </div>
                     </div>
+                  )}
+                </div>
+
+                {/* Score bubble */}
+                <div className="flex items-center gap-4 mb-3">
+                  <div className="relative w-20 h-20">
+                    <div
+                      className={`w-full h-full rounded-full flex items-center justify-center text-2xl font-semibold ${
+                        !hasRunCompliance
+                          ? "bg-slate-900 text-slate-500 border border-slate-700"
+                          : scorePercent >= 90
+                          ? "bg-emerald-900/50 text-emerald-200 border border-emerald-500/70"
+                          : scorePercent >= 70
+                          ? "bg-amber-900/50 text-amber-200 border border-amber-500/70"
+                          : "bg-rose-900/50 text-rose-100 border border-rose-500/70"
+                      }`}
+                    >
+                      {hasRunCompliance ? scorePercent : "--"}
+                    </div>
+                    <div className="absolute inset-0 rounded-full border border-white/10 animate-pulse pointer-events-none" />
+                  </div>
+
+                  <div className="flex-1">
+                    <p className="text-xs text-slate-300 mb-1">
+                      Overall score based on controls selected by the{" "}
+                      <span className="font-semibold text-indigo-200">
+                        {activeFrameworkLabel}
+                      </span>{" "}
+                      framework.
+                    </p>
                     {hasRunCompliance && (
-                      <div className="text-xs text-gray-400">
-                        Overall pass rate
-                      </div>
+                      <p className="text-[11px] text-slate-400">
+                        {complianceSummary?.passed_checks ?? 0} of{" "}
+                        {complianceSummary?.total_checks ?? 0} in-scope controls are
+                        currently passing.
+                      </p>
                     )}
                   </div>
                 </div>
 
-                <div className="w-full h-2 rounded-full bg-slate-900 overflow-hidden mb-3">
-                  <div
-                    className="h-full bg-emerald-500 transition-all"
-                    style={{
-                      width: hasRunCompliance
-                        ? `${Math.min(scorePercent, 100)}%`
-                        : "0%",
-                    }}
-                  />
-                </div>
+                      {/* Per-control breakdown */}
+                      <div className="mt-1 border-t border-slate-800/70 pt-2 flex-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[11px] font-semibold text-slate-300 uppercase tracking-wide">
+                            Control breakdown
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            Bold = included in current framework
+                          </span>
+                        </div>
 
-                {controls.length > 0 ? (
-                  <div className="space-y-1 text-xs">
-                    {controls.map((c) => (
-                      <div
-                        key={c.id || c.label}
-                        className="flex items-center justify-between"
-                      >
-                        <span className="text-gray-300">
-                          {c.label || c.id || "Control"}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <div className="relative flex h-2.5 w-2.5">
-                            <span
-                              className={`absolute inline-flex h-full w-full rounded-full ${
-                                c.passed ? "bg-emerald-400" : "bg-red-500"
-                              } opacity-75 animate-ping`}
-                            ></span>
-                            <span
-                              className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
-                                c.passed ? "bg-emerald-400" : "bg-red-500"
-                              }`}
-                            ></span>
-                          </div>
-                          {statusBadgeFromPassed(c.passed)}
+                        <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                          {ALL_CONTROL_ORDER.map((ctl) => {
+                            const inFramework =
+                              FRAMEWORK_CONTROLS[activeFramework]?.includes(ctl.id);
+                            const control = controlsById[ctl.id];
+                            const hasResult =
+                              hasRunCompliance && control && typeof control.passed === "boolean";
+                            const passed = hasResult ? control.passed : null;
+                            const guidance =
+                              FRAMEWORK_FIX_GUIDANCE[activeFramework]?.[ctl.id] || "";
+
+                            // Dot color + pulse
+                            let dotColor = "bg-slate-500";
+                            let dotShouldPing = false;
+                            if (hasRunCompliance && inFramework && hasResult) {
+                              if (passed) {
+                                dotColor = "bg-emerald-400";
+                              } else {
+                                dotColor = "bg-red-500";
+                              }
+                              dotShouldPing = true;
+                            }
+
+                            // Status badge content
+                            let statusNode;
+                            if (!hasRunCompliance) {
+                              statusNode = (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-700 text-slate-300 bg-slate-900/70">
+                                  Not run yet
+                                </span>
+                              );
+                            } else if (inFramework && hasResult) {
+                              statusNode = statusBadgeFromPassed(passed);
+                            } else if (!inFramework) {
+                              statusNode = (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-700 text-slate-300 bg-slate-900/70">
+                                  Not scored for this framework
+                                </span>
+                              );
+                            } else {
+                              statusNode = (
+                                <span className="text-[10px] px-2 py-0.5 rounded-full border border-slate-700 text-slate-300 bg-slate-900/70">
+                                  No data
+                                </span>
+                              );
+                            }
+
+                            return (
+                              <div
+                                key={ctl.id}
+                                className={`flex flex-col rounded-md px-2 py-1 border ${
+                                  !inFramework
+                                    ? "border-slate-800/80 bg-slate-950/60 opacity-60"
+                                    : passed
+                                    ? "border-emerald-700/70 bg-emerald-950/40"
+                                    : "border-amber-700/70 bg-amber-950/40"
+                                }`}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className={`text-[11px] ${
+                                        inFramework
+                                          ? "font-semibold text-slate-100"
+                                          : "text-slate-400"
+                                      }`}
+                                    >
+                                      {ctl.label}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {/* Blinking status light */}
+                                    <div className="relative flex h-2.5 w-2.5">
+                                      {dotShouldPing && (
+                                        <span
+                                          className={`absolute inline-flex h-full w-full rounded-full ${dotColor} opacity-75 animate-ping`}
+                                        />
+                                      )}
+                                      <span
+                                        className={`relative inline-flex rounded-full h-2.5 w-2.5 ${dotColor}`}
+                                      />
+                                    </div>
+                                    {statusNode}
+                                  </div>
+                                </div>
+
+                                {/* Extra text depending on state */}
+                                {!hasRunCompliance && (
+                                  <p className="mt-1 text-[10px] text-slate-400">
+                                    Run the compliance score to evaluate this control.
+                                  </p>
+                                )}
+
+                                {hasRunCompliance && inFramework && hasResult && !passed && guidance && (
+                                  <p className="mt-1 text-[10px] text-slate-200">
+                                    <span className="font-semibold">
+                                      Fix ({activeFrameworkLabel}):
+                                    </span>{" "}
+                                    {guidance}
+                                  </p>
+                                )}
+
+                                {hasRunCompliance && !inFramework && (
+                                  <p className="mt-1 text-[10px] text-slate-400">
+                                    This control is tracked but not counted toward the{" "}
+                                    <span className="text-indigo-200">
+                                      {activeFrameworkLabel}
+                                    </span>{" "}
+                                    score.
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-gray-500">
-                    Run the compliance score from the left to populate this
-                    section.
-                  </p>
-                )}
-              </div>
+
+
 
               {/* Details & Guidance */}
               <div className="bg-black/40 border border-indigo-900/60 rounded-2xl p-6 shadow-lg shadow-indigo-900/40">
@@ -2929,6 +3185,7 @@ const rdsCount =
                 )}
               </div>
             </div>
+          </div>
           </section>
         </div>
       </main>

@@ -27,6 +27,7 @@ from .aws import (
     get_sg_inventory,
     build_attack_surface,  # ✅ NEW
 )
+from .frameworks import FRAMEWORK_CONTROLS
 from .report import build_summary, render_s3_section
 
 load_dotenv()
@@ -84,6 +85,11 @@ class ComplianceSummary(BaseModel):
     region: str
     compliance_score: int
     checks: dict
+
+
+class ComplianceInput(ScanInput):
+    # Which framework to score against: "cis", "pci", "soc2"
+    framework: str = "cis"
 
 
 @app.get("/")
@@ -195,9 +201,9 @@ def email_report(
         )
 
         # ---------- HTML body omitted for brevity (unchanged) ----------
-        # (use exactly what you already have here)
-        # ...
+        # Use your existing HTML template here:
         # body_html = f"""<!DOCTYPE html> ... """
+        body_html = body_text  # placeholder if you don't have HTML
 
         # ---------- Send with SES ----------
         to_addr = inp.email_to or TEST_TO
@@ -213,8 +219,8 @@ def email_report(
             Message={
                 "Subject": {"Data": "Weekly AWS Security Report", "Charset": "UTF-8"},
                 "Body": {
-                  "Text": {"Data": body_text, "Charset": "UTF-8"},
-                  "Html": {"Data": body_html, "Charset": "UTF-8"},
+                    "Text": {"Data": body_text, "Charset": "UTF-8"},
+                    "Html": {"Data": body_html, "Charset": "UTF-8"},
                 },
             },
         )
@@ -382,18 +388,22 @@ def check_ebs_encryption(
 
 @app.post("/compliance/summary")
 def compliance_summary(
-    inp: ScanInput,
+    inp: ComplianceInput,
     current_user: models.User = Depends(get_current_user),
 ):
     """
     Aggregate multiple controls into a single compliance score.
-    Controls (equal weight):
+
+    Controls (calculated once here):
       - Security Hub: pass if 0 findings
       - S3: pass if no public + no unencrypted buckets
       - CloudTrail: pass if at least 1 multi-region trail
       - Config: pass if recorder exists AND recording enabled
       - EBS: pass if default encryption on AND no unencrypted volumes
       - IAM password policy: pass if a policy is present
+
+    The active framework (cis / pci / soc2) decides which of these
+    controls count toward the score.
     """
     try:
         # Assume role once and reuse creds
@@ -430,18 +440,20 @@ def compliance_summary(
         ) == 0
 
         # --- 6) IAM password policy ---
-        iam_policy = get_iam_password_policy_status(creds, region)  # ✅ FIXED
+        iam_policy = get_iam_password_policy_status(creds, region)
         iam_ok = bool(iam_policy.get("policy_present"))
 
-        # --- Scoring ---
-        checks = [
-            {
+        # --- Scoring with frameworks ---
+        framework = getattr(inp, "framework", "cis")
+
+        all_checks: Dict[str, Dict[str, Any]] = {
+            "security_hub": {
                 "id": "security_hub",
                 "label": "Security Hub findings",
                 "passed": sec_hub_ok,
                 "details": {"finding_count": sh_count},
             },
-            {
+            "s3_baseline": {
                 "id": "s3_baseline",
                 "label": "S3 public access & encryption",
                 "passed": s3_ok,
@@ -451,37 +463,43 @@ def compliance_summary(
                     "unencrypted_buckets": s3_unenc,
                 },
             },
-            {
+            "cloudtrail": {
                 "id": "cloudtrail",
                 "label": "CloudTrail multi-region trail",
                 "passed": ct_ok,
                 "details": ct,
             },
-            {
+            "config": {
                 "id": "config",
                 "label": "AWS Config recorder enabled",
                 "passed": cfg_ok,
                 "details": cfg,
             },
-            {
+            "ebs_encryption": {
                 "id": "ebs_encryption",
                 "label": "EBS default encryption",
                 "passed": ebs_ok,
                 "details": ebs,
             },
-            {
+            "iam_password_policy": {
                 "id": "iam_password_policy",
                 "label": "IAM password policy configured",
                 "passed": iam_ok,
                 "details": iam_policy,
             },
-        ]
+        }
+
+        control_ids = FRAMEWORK_CONTROLS.get(
+            framework, FRAMEWORK_CONTROLS["cis"]
+        )
+        checks = [all_checks[cid] for cid in control_ids if cid in all_checks]
 
         total_checks = len(checks)
         passed_checks = sum(1 for c in checks if c["passed"])
         score = round((passed_checks / total_checks) * 100, 1) if total_checks else 0.0
 
         return {
+            "framework": framework,
             "score": score,
             "passed_checks": passed_checks,
             "total_checks": total_checks,
