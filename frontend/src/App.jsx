@@ -4,6 +4,111 @@ import { apiFetch } from "./apiClient";
 import GlowDot from "./GlowDot";
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || "v0.1.0";
+const CLOUDAUDITPRO_ACCOUNT_ID = "851725210465";
+
+// Optional: S3 URL where you will host the template later
+const CLOUDAUDITPRO_CF_TEMPLATE_URL =
+  import.meta.env.VITE_CF_TEMPLATE_URL || "";
+
+// Full CloudFormation template
+const CLOUDAUDITPRO_CF_TEMPLATE = `AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  CloudAuditPro read-only IAM role and policies to allow security/compliance
+  scans without write access.
+
+Parameters:
+  ExternalAccountId:
+    Type: String
+    Description: CloudAuditPro management account ID (the account that will assume this role)
+    Default: ${CLOUDAUDITPRO_ACCOUNT_ID}
+    MinLength: 12
+    MaxLength: 12
+    AllowedPattern: '^[0-9]{12}$'
+
+  ExternalRoleName:
+    Type: String
+    Default: CloudAuditProAppRole
+    Description: Role in the CloudAuditPro account that will assume this role.
+
+Resources:
+  CloudAuditProReadRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CloudAuditProReadRole
+      Description: Read-only role used by CloudAuditPro to scan this AWS account.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::\${ExternalAccountId}:role/\${ExternalRoleName}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+        - arn:aws:iam::aws:policy/AWSSecurityHubReadOnlyAccess
+        - arn:aws:iam::aws:policy/AWSConfigUserAccess
+      Policies:
+        - PolicyName: CloudAuditPro-CloudTrailRead
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudtrail:DescribeTrails
+                  - cloudtrail:GetTrailStatus
+                  - cloudtrail:ListTrails
+                Resource: '*'
+        - PolicyName: CloudAuditPro-ConfigRecorderRead
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - config:DescribeConfigurationRecorders
+                  - config:DescribeConfigurationRecorderStatus
+                  - config:DescribeDeliveryChannels
+                  - config:DescribeDeliveryChannelStatus
+                Resource: '*'
+        - PolicyName: CloudAuditPro-EBSEncryptionRead
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:GetEbsEncryptionByDefault
+                  - ec2:DescribeVolumes
+                Resource: '*'
+        - PolicyName: CloudAuditPro-IAMPasswordPolicyRead
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:GetAccountPasswordPolicy
+                Resource: '*'
+        - PolicyName: CloudAuditPro-ResourceInventoryRead
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeRouteTables
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeVolumes
+                  - ec2:GetEbsEncryptionByDefault
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeNetworkInterfaces
+                  - rds:DescribeDBInstances
+                Resource: '*'
+
+Outputs:
+  CloudAuditProReadRoleArn:
+    Description: ARN of the read-only role to paste into CloudAuditPro.
+    Value: !GetAtt CloudAuditProReadRole.Arn`;
 
 const CHECK_LABELS = {
   security_hub: "Security Hub",
@@ -45,6 +150,8 @@ const FRAMEWORK_CONTROLS = {
     "iam_password_policy",
   ],
 };
+
+
 
 // For guidance text per framework + control
 const FRAMEWORK_FIX_GUIDANCE = {
@@ -138,6 +245,24 @@ export default function App({ user, onLogout }) {
   // Toast for new fixes
   const [toast, setToast] = useState(null); // { label, via }
 
+  const handleCopyCloudFormationTemplate = async () => {
+    try {
+      await navigator.clipboard.writeText(CLOUDAUDITPRO_CF_TEMPLATE);
+      setToast({
+        type: "success",
+        message: "CloudFormation template copied to clipboard.",
+      });
+    } catch (err) {
+      console.error("Failed to copy template", err);
+      setToast({
+        type: "error",
+        message:
+          "Couldn't copy automatically — you can still select the template text manually.",
+      });
+    }
+  };
+
+
   // AWS inventory
   const [ec2Inventory, setEc2Inventory] = useState(null);
   const [vpcInventory, setVpcInventory] = useState(null);
@@ -152,7 +277,9 @@ export default function App({ user, onLogout }) {
   const [showSgModal, setShowSgModal] = useState(false);
   const [attackSurface, setAttackSurface] = useState(null);
   const [loadingAttackSurface, setLoadingAttackSurface] = useState(false); 
-  const [showSgHelp, setShowSgHelp] = useState(false); 
+  const [showSgHelp, setShowSgHelp] = useState(false);
+  // Onboarding helpers
+  const [showCfnTemplate, setShowCfnTemplate] = useState(false); 
 
   // --------- Loading + error ----------
   const [loadingScan, setLoadingScan] = useState(false);
@@ -716,10 +843,12 @@ export default function App({ user, onLogout }) {
       const cleanRoleName = (roleName || "CloudAuditProReadRole").trim();
       const cleanRegion = (region || "us-east-1").trim();
       const display_name = `${cleanAccountId} (${cleanRegion})`;
-
+  
+      let savedAccount = null;
+  
       if (selectedAwsAccountId) {
-        // Update existing
-        const updated = await apiFetch(`/aws-accounts/${selectedAwsAccountId}`, {
+        // ----- UPDATE EXISTING -----
+        savedAccount = await apiFetch(`/aws-accounts/${selectedAwsAccountId}`, {
           token,
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -730,15 +859,15 @@ export default function App({ user, onLogout }) {
             region: cleanRegion,
           }),
         });
-
+  
         setAwsAccounts((prev) =>
           prev.map((a) =>
-            String(a.id) === String(selectedAwsAccountId) ? updated : a
+            String(a.id) === String(selectedAwsAccountId) ? savedAccount : a
           )
         );
       } else {
-        // Create new
-        const created = await apiFetch("/aws-accounts", {
+        // ----- CREATE NEW -----
+        savedAccount = await apiFetch("/aws-accounts", {
           token,
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -749,15 +878,46 @@ export default function App({ user, onLogout }) {
             region: cleanRegion,
           }),
         });
-
-        setAwsAccounts((prev) => [created, ...prev]);
-        setSelectedAwsAccountId(String(created.id));
+  
+        setAwsAccounts((prev) => [savedAccount, ...prev]);
+        setSelectedAwsAccountId(String(savedAccount.id));
       }
+  
+      // ------------------------------------------------------------
+      // ⭐️ After save: Perform AWS connection test
+      // ------------------------------------------------------------
+      try {
+        const conn = await apiFetch("/aws/connection-check", {
+          token,
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            account_id: cleanAccountId,
+            role_name: cleanRoleName,
+            region: cleanRegion,
+          }),
+        });
+  
+        setToast({
+          type: "success",
+          message: `Connected ✓ CloudAuditPro successfully assumed: ${conn.arn}`,
+        });
+      } catch (err) {
+        console.error("Connection check failed:", err);
+  
+        setToast({
+          type: "error",
+          message:
+            "Saved the AWS account, but CloudAuditPro could *not* assume the role. Double-check trust policy and permissions.",
+        });
+      }
+  
     } catch (err) {
       console.error("Failed to save AWS account:", err);
       alert(err.message || "Failed to save AWS account");
     }
   };
+  
 
   const deleteSelectedAwsAccount = async () => {
     if (!selectedAwsAccountId) return;
@@ -1173,6 +1333,178 @@ const rdsCount =
       {/* Main content */}
       <main className="flex-1 px-6 py-6">
         <div className="max-w-7xl mx-auto space-y-6">
+{/* Onboarding helper – shown until at least one AWS account is saved */}
+{awsAccounts.length === 0 && (
+  <section className="rounded-2xl border border-indigo-900/60 bg-black/40 p-5 shadow-lg shadow-indigo-900/40">
+    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+      {/* Left: steps + explanation */}
+      <div>
+        <div className="inline-flex items-center gap-2 rounded-full bg-indigo-950/70 border border-indigo-700/80 px-3 py-1 mb-2">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-indigo-300">
+            Getting started
+          </span>
+          <span className="text-[10px] text-indigo-200/80">
+            Step 1 of 3 · Connect an AWS account
+          </span>
+        </div>
+
+        <h2 className="text-lg font-semibold text-indigo-100 mb-1">
+          Connect your first AWS account to CloudAuditPro
+        </h2>
+
+        <p className="text-[13px] text-gray-300 mb-2 max-w-xl">
+          CloudAuditPro reads your environment using a{" "}
+          <span className="font-semibold text-indigo-200">
+            read-only IAM role
+          </span>{" "}
+          that you create in your AWS account. No long-lived keys, no write
+          access — just Security Hub, Config, CloudTrail, S3, EC2, and IAM{" "}
+          <span className="font-semibold">read-only</span> permissions.
+        </p>
+
+        {/* Show their CloudAuditPro account ID explicitly */}
+        <p className="text-[11px] text-indigo-200 mb-3">
+          Your CloudAuditPro account ID:{" "}
+          <code className="font-mono text-xs bg-slate-900/70 px-1 py-0.5 rounded border border-slate-700">
+            {CLOUDAUDITPRO_ACCOUNT_ID}
+          </code>
+        </p>
+
+        <ol className="space-y-3 text-[12px] text-gray-200">
+          {/* Step 1 */}
+          <li className="flex gap-2">
+            <span className="mt-[2px] flex h-5 w-5 items-center justify-center rounded-full bg-indigo-700/70 text-[10px] font-bold">
+              1
+            </span>
+            <div>
+              <span className="font-semibold text-indigo-100">
+                Create a read-only IAM role in your AWS account.
+              </span>
+              <p className="text-gray-300">
+                In the target AWS account, go to{" "}
+                <span className="font-mono">IAM → Roles</span> and create a
+                role (for example{" "}
+                <span className="font-mono">CloudAuditProReadRole</span>) with{" "}
+                <span className="font-mono">sts:AssumeRole</span> trust to your
+                CloudAuditPro management account and attach the read-only
+                policies below.
+              </p>
+
+              {/* CloudFormation template toggle */}
+              <button
+                type="button"
+                onClick={() => setShowCfnTemplate((v) => !v)}
+                className="mt-2 text-[11px] text-indigo-300 underline decoration-dotted hover:text-indigo-200"
+              >
+                {showCfnTemplate
+                  ? "Hide CloudFormation template"
+                  : "Show CloudFormation template"}
+              </button>
+
+              {showCfnTemplate && (
+                <div className="mt-2 rounded-lg border border-slate-800 bg-slate-950/80 p-2">
+                  {/* Header for template + actions */}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+                    <div>
+                      <span className="block text-[11px] text-gray-300">
+                        CloudFormation (deploy in each AWS account you want to scan)
+                      </span>
+                      <span className="block text-[10px] text-gray-500">
+                        Params:{" "}
+                        <span className="font-mono">
+                          ExternalAccountId, ExternalRoleName
+                        </span>
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {/* Copy template button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard
+                            .writeText(CLOUDAUDITPRO_CF_TEMPLATE)
+                            .catch((err) =>
+                              console.error("Failed to copy template", err)
+                            );
+                        }}
+                        className="text-[11px] px-2 py-1 rounded border border-slate-700 bg-slate-900 hover:bg-slate-800 text-indigo-200"
+                      >
+                        Copy template
+                      </button>
+
+                      {/* Optional: one-click deploy if template URL is configured */}
+                      {CLOUDAUDITPRO_CF_TEMPLATE_URL && (
+                        <a
+                          href={`https://console.aws.amazon.com/cloudformation/home#/stacks/create/review?templateURL=${encodeURIComponent(
+                            CLOUDAUDITPRO_CF_TEMPLATE_URL
+                          )}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] px-2 py-1 rounded border border-indigo-600 bg-indigo-900 hover:bg-indigo-800 text-indigo-100"
+                        >
+                          Deploy stack →
+                        </a>
+                      )}
+
+                      {/* Fallback link to CF console if no URL set */}
+                      {!CLOUDAUDITPRO_CF_TEMPLATE_URL && (
+                        <a
+                          href="https://console.aws.amazon.com/cloudformation/home"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[11px] px-2 py-1 rounded border border-slate-700 bg-slate-900 hover:bg-slate-800 text-gray-200"
+                        >
+                          Open CloudFormation console →
+                        </a>
+                      )}
+                    </div>
+                  </div>
+
+                  <pre className="text-[10px] text-gray-200 overflow-x-auto whitespace-pre leading-snug">
+{CLOUDAUDITPRO_CF_TEMPLATE}
+                  </pre>
+
+                  {/* Tiny trust diagram */}
+                  <div className="mt-3 rounded-md bg-slate-950/90 border border-slate-800 px-3 py-2 text-[10px] text-slate-200">
+                    <div className="font-semibold text-[11px] mb-1">
+                      How CloudAuditPro connects
+                    </div>
+                    <pre className="font-mono whitespace-pre leading-snug mb-1">
+{`CloudAuditPro account (SaaS)
+        |
+   sts:AssumeRole
+        |
+Customer AWS account
+  ↳ CloudAuditProReadRole (read-only)`}
+                    </pre>
+                    <p className="text-[10px] text-slate-400">
+                      CloudAuditPro never stores your AWS access keys — it only
+                      assumes this read-only role via AWS STS.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              <p className="text-[11px] text-gray-400 mt-1">
+                Already have a security audit role? You can re-use it — just
+                add a trust relationship to your CloudAuditPro management
+                account and enter its role name in the panel on the left.
+              </p>
+            </div>
+          </li>
+
+          {/* Step 2 + Step 3 text stays as you already had it */}
+          {/* ... keep your existing Step 2 & 3 <li> blocks here ... */}
+        </ol>
+      </div>
+
+      {/* Right-hand “You’re almost there” explainer card stays the same */}
+      {/* ... keep your existing right-side card JSX here ... */}
+    </div>
+  </section>
+)}
+
           {/* SUMMARY STRIP */}
           <section className="grid gap-4 md:grid-cols-3">
             {/* Summary: Compliance Score */}

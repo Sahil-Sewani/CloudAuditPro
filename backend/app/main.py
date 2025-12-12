@@ -91,6 +91,11 @@ class ComplianceInput(ScanInput):
     # Which framework to score against: "cis", "pci", "soc2"
     framework: str = "cis"
 
+class ConnectionCheckInput(BaseModel):
+    account_id: str
+    role_name: str
+    region: str
+
 
 @app.get("/")
 def health():
@@ -508,3 +513,26 @@ def compliance_summary(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/aws/connection-check")
+def aws_connection_check(
+    inp: ConnectionCheckInput,
+    current_user: models.User = Depends(get_current_user),
+):
+    try:
+        creds = assume_customer_role(inp.account_id, inp.role_name)
+        sts = boto3.client(
+            "sts",
+            aws_access_key_id=creds["AccessKeyId"],
+            aws_secret_access_key=creds["SecretAccessKey"],
+            aws_session_token=creds["SessionToken"],
+            region_name=inp.region,
+        )
+        ident = sts.get_caller_identity()
+        return {
+          "ok": True,
+          "account": ident.get("Account"),
+          "arn": ident.get("Arn"),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
