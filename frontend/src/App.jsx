@@ -213,7 +213,11 @@ export default function App({ user, onLogout }) {
     return localStorage.getItem("cap_framework") || "cis";
   });
 
-
+  const [connectionStatus, setConnectionStatus] = useState(null);
+  // { state: "idle" | "checking" | "ok" | "error", message: string }
+  
+  const clearConnectionStatus = () => setConnectionStatus(null);
+  
 
   // Use the selected region for console links, with a safe default
   const consoleRegion = region || "us-east-1";
@@ -838,16 +842,20 @@ export default function App({ user, onLogout }) {
       alert("Please enter an AWS Account ID before saving.");
       return;
     }
+  
+    const cleanAccountId = accountId.trim();
+    const cleanRoleName = (roleName || "CloudAuditProReadRole").trim();
+    const cleanRegion = (region || "us-east-1").trim();
+    const display_name = `${cleanAccountId} (${cleanRegion})`;
+  
     try {
-      const cleanAccountId = accountId.trim();
-      const cleanRoleName = (roleName || "CloudAuditProReadRole").trim();
-      const cleanRegion = (region || "us-east-1").trim();
-      const display_name = `${cleanAccountId} (${cleanRegion})`;
+      // start banner immediately
+      setConnectionStatus({ state: "checking", message: "Checking connection..." });
   
       let savedAccount = null;
   
       if (selectedAwsAccountId) {
-        // ----- UPDATE EXISTING -----
+        // UPDATE EXISTING
         savedAccount = await apiFetch(`/aws-accounts/${selectedAwsAccountId}`, {
           token,
           method: "PUT",
@@ -866,7 +874,7 @@ export default function App({ user, onLogout }) {
           )
         );
       } else {
-        // ----- CREATE NEW -----
+        // CREATE NEW
         savedAccount = await apiFetch("/aws-accounts", {
           token,
           method: "POST",
@@ -883,9 +891,7 @@ export default function App({ user, onLogout }) {
         setSelectedAwsAccountId(String(savedAccount.id));
       }
   
-      // ------------------------------------------------------------
-      // ⭐️ After save: Perform AWS connection test
-      // ------------------------------------------------------------
+      // CONNECTION CHECK (after save)
       try {
         const conn = await apiFetch("/aws/connection-check", {
           token,
@@ -898,25 +904,26 @@ export default function App({ user, onLogout }) {
           }),
         });
   
-        setToast({
-          type: "success",
-          message: `Connected ✓ CloudAuditPro successfully assumed: ${conn.arn}`,
+        setConnectionStatus({
+          state: "ok",
+          message: `Connected ✓ CloudAuditPro can assume the role (${conn.account || cleanAccountId}).`,
         });
       } catch (err) {
         console.error("Connection check failed:", err);
-  
-        setToast({
-          type: "error",
+        setConnectionStatus({
+          state: "error",
           message:
-            "Saved the AWS account, but CloudAuditPro could *not* assume the role. Double-check trust policy and permissions.",
+            "Saved the AWS account, but CloudAuditPro could not assume the role. Check trust policy + role name + account ID.",
         });
       }
-  
     } catch (err) {
       console.error("Failed to save AWS account:", err);
+      setConnectionStatus({ state: "error", message: "Failed to save AWS account." });
       alert(err.message || "Failed to save AWS account");
     }
   };
+  
+
   
 
   const deleteSelectedAwsAccount = async () => {
@@ -1664,6 +1671,22 @@ const rdsCount =
                       </button>
                     </div>
                   </div>
+
+                    {/* ✅ Connection status banner */}
+                    {connectionStatus && (
+                      <div
+                        className={[
+                          "mt-2 rounded-lg border px-3 py-2 text-[11px]",
+                          connectionStatus.state === "ok"
+                            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                            : connectionStatus.state === "error"
+                            ? "border-rose-500/40 bg-rose-500/10 text-rose-200"
+                            : "border-slate-600/40 bg-slate-900/40 text-slate-200",
+                        ].join(" ")}
+                      >
+                        {connectionStatus.message}
+                      </div>
+                    )}
 
                   <p className="mt-2 text-[10px] text-slate-400">
                     Saved AWS accounts are stored in your CloudAuditPro
