@@ -1371,132 +1371,85 @@ const rdsCount =
         </p>
 
         <ol className="space-y-3 text-[12px] text-gray-200">
-          {/* Step 1 */}
-          <li className="flex gap-2">
-            <span className="mt-[2px] flex h-5 w-5 items-center justify-center rounded-full bg-indigo-700/70 text-[10px] font-bold">
-              1
-            </span>
-            <div>
-              <span className="font-semibold text-indigo-100">
-                Create a read-only IAM role in your AWS account.
+  {/* Step 1 */}
+  <li className="flex gap-2">
+    <span className="mt-[2px] flex h-5 w-5 items-center justify-center rounded-full bg-indigo-700/70 text-[10px] font-bold">
+      1
+    </span>
+    <div className="min-w-0">
+      <span className="font-semibold text-indigo-100">
+        Create the read-only IAM role in your AWS account.
+      </span>
+
+      <p className="text-gray-300 mt-1">
+        Option A (recommended): deploy the CloudFormation template below. This creates{" "}
+        <span className="font-mono">CloudAuditProReadRole</span> with read-only permissions and the correct trust policy.
+      </p>
+
+      <div className="mt-2">
+        <button
+          type="button"
+          onClick={() => setShowCfnTemplate((v) => !v)}
+          className="text-[11px] text-indigo-300 underline decoration-dotted hover:text-indigo-200"
+        >
+          {showCfnTemplate ? "Hide CloudFormation template" : "Show CloudFormation template"}
+        </button>
+
+        {showCfnTemplate && (
+          <div className="mt-2 rounded-lg border border-slate-800 bg-slate-950/80 p-2">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[11px] text-gray-300">
+                CloudFormation (deploy in each AWS account you want to scan)
               </span>
-              <p className="text-gray-300">
-                In the target AWS account, go to{" "}
-                <span className="font-mono">IAM → Roles</span> and create a
-                role (for example{" "}
-                <span className="font-mono">CloudAuditProReadRole</span>) with{" "}
-                <span className="font-mono">sts:AssumeRole</span> trust to your
-                CloudAuditPro management account and attach the read-only
-                policies below.
-              </p>
-
-              {/* CloudFormation template toggle */}
-              <button
-                type="button"
-                onClick={() => setShowCfnTemplate((v) => !v)}
-                className="mt-2 text-[11px] text-indigo-300 underline decoration-dotted hover:text-indigo-200"
-              >
-                {showCfnTemplate
-                  ? "Hide CloudFormation template"
-                  : "Show CloudFormation template"}
-              </button>
-
-              {showCfnTemplate && (
-                <div className="mt-2 rounded-lg border border-slate-800 bg-slate-950/80 p-2">
-                  {/* Header for template + actions */}
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-                    <div>
-                      <span className="block text-[11px] text-gray-300">
-                        CloudFormation (deploy in each AWS account you want to scan)
-                      </span>
-                      <span className="block text-[10px] text-gray-500">
-                        Params:{" "}
-                        <span className="font-mono">
-                          ExternalAccountId, ExternalRoleName
-                        </span>
-                      </span>
-                    </div>
-
-                    <div className="flex flex-wrap gap-2">
-                      {/* Copy template button */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard
-                            .writeText(CLOUDAUDITPRO_CF_TEMPLATE)
-                            .catch((err) =>
-                              console.error("Failed to copy template", err)
-                            );
-                        }}
-                        className="text-[11px] px-2 py-1 rounded border border-slate-700 bg-slate-900 hover:bg-slate-800 text-indigo-200"
-                      >
-                        Copy template
-                      </button>
-
-                      {/* Optional: one-click deploy if template URL is configured */}
-                      {CLOUDAUDITPRO_CF_TEMPLATE_URL && (
-                        <a
-                          href={`https://console.aws.amazon.com/cloudformation/home#/stacks/create/review?templateURL=${encodeURIComponent(
-                            CLOUDAUDITPRO_CF_TEMPLATE_URL
-                          )}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[11px] px-2 py-1 rounded border border-indigo-600 bg-indigo-900 hover:bg-indigo-800 text-indigo-100"
-                        >
-                          Deploy stack →
-                        </a>
-                      )}
-
-                      {/* Fallback link to CF console if no URL set */}
-                      {!CLOUDAUDITPRO_CF_TEMPLATE_URL && (
-                        <a
-                          href="https://console.aws.amazon.com/cloudformation/home"
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-[11px] px-2 py-1 rounded border border-slate-700 bg-slate-900 hover:bg-slate-800 text-gray-200"
-                        >
-                          Open CloudFormation console →
-                        </a>
-                      )}
-                    </div>
-                  </div>
-
-                  <pre className="text-[10px] text-gray-200 overflow-x-auto whitespace-pre leading-snug">
-{CLOUDAUDITPRO_CF_TEMPLATE}
-                  </pre>
-
-                  {/* Tiny trust diagram */}
-                  <div className="mt-3 rounded-md bg-slate-950/90 border border-slate-800 px-3 py-2 text-[10px] text-slate-200">
-                    <div className="font-semibold text-[11px] mb-1">
-                      How CloudAuditPro connects
-                    </div>
-                    <pre className="font-mono whitespace-pre leading-snug mb-1">
-{`CloudAuditPro account (SaaS)
-        |
-   sts:AssumeRole
-        |
-Customer AWS account
-  ↳ CloudAuditProReadRole (read-only)`}
-                    </pre>
-                    <p className="text-[10px] text-slate-400">
-                      CloudAuditPro never stores your AWS access keys — it only
-                      assumes this read-only role via AWS STS.
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <p className="text-[11px] text-gray-400 mt-1">
-                Already have a security audit role? You can re-use it — just
-                add a trust relationship to your CloudAuditPro management
-                account and enter its role name in the panel on the left.
-              </p>
+              <span className="text-[10px] text-gray-500">Copy &amp; paste</span>
             </div>
-          </li>
 
-          {/* Step 2 + Step 3 text stays as you already had it */}
-          {/* ... keep your existing Step 2 & 3 <li> blocks here ... */}
-        </ol>
+            <pre className="text-[10px] text-gray-200 overflow-x-auto whitespace-pre leading-snug">
+{CLOUDAUDITPRO_CF_TEMPLATE}
+            </pre>
+          </div>
+        )}
+      </div>
+    </div>
+  </li>
+
+  {/* Step 2 */}
+  <li className="flex gap-2">
+    <span className="mt-[2px] flex h-5 w-5 items-center justify-center rounded-full bg-indigo-700/70 text-[10px] font-bold">
+      2
+    </span>
+    <div className="min-w-0">
+      <span className="font-semibold text-indigo-100">
+        Add the AWS account in CloudAuditPro.
+      </span>
+      <p className="text-gray-300 mt-1">
+        In the left panel, enter your <span className="font-mono">AWS Account ID</span>,{" "}
+        <span className="font-mono">Role name</span> (usually{" "}
+        <span className="font-mono">CloudAuditProReadRole</span>), and{" "}
+        <span className="font-mono">Region</span>, then click{" "}
+        <span className="font-semibold">Save AWS account</span>.
+      </p>
+    </div>
+  </li>
+
+  {/* Step 3 */}
+  <li className="flex gap-2">
+    <span className="mt-[2px] flex h-5 w-5 items-center justify-center rounded-full bg-indigo-700/70 text-[10px] font-bold">
+      3
+    </span>
+    <div className="min-w-0">
+      <span className="font-semibold text-indigo-100">
+        Verify connection, then run your first checks.
+      </span>
+      <p className="text-gray-300 mt-1">
+        After saving, CloudAuditPro should confirm the role is assumable (your{" "}
+        <span className="text-emerald-300 font-semibold">Connected ✓</span> state). Then run
+        Security Hub / S3 / CloudTrail / Config checks or generate a compliance score.
+      </p>
+    </div>
+  </li>
+</ol>
+
       </div>
 
       {/* Right-hand “You’re almost there” explainer card stays the same */}
