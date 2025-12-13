@@ -368,6 +368,47 @@ export default function App({ user, onLogout }) {
     fetchAwsAccounts();
   }, [token]);
 
+// --------- Auto connection check (NEW) ----------
+useEffect(() => {
+  const run = async () => {
+    if (!token) return;
+
+    if (!accountId || !roleName || !region) {
+      setConnectionStatus(null);
+      return;
+    }
+
+    setConnectionStatus({ state: "checking", message: "Checking connection..." });
+
+    try {
+      const conn = await apiFetch("/aws/connection-check", {
+        token,
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          account_id: accountId.trim(),
+          role_name: (roleName || "CloudAuditProReadRole").trim(),
+          region: (region || "us-east-1").trim(),
+        }),
+      });
+
+      setConnectionStatus({
+        state: "ok",
+        message: `Connected ✓ CloudAuditPro can assume the role (${conn.account || accountId}).`,
+      });
+    } catch (err) {
+      console.error("Auto connection check failed:", err);
+      setConnectionStatus({
+        state: "error",
+        message:
+          "Not connected. Check trust policy + role name + account ID, then click Save current.",
+      });
+    }
+  };
+
+  run();
+}, [token, selectedAwsAccountId, accountId, roleName, region]);
+
   // --------- Helper: record "recently fixed" from status changes ----------
   const recordFixedChanges = (updates, sourceLabel) => {
     // updates: { id: { label, passed } }
@@ -828,6 +869,9 @@ export default function App({ user, onLogout }) {
   const handleSelectAwsAccount = (e) => {
     const id = e.target.value;
     setSelectedAwsAccountId(id);
+
+    setConnectionStatus(null); // ✅ clear old banner when switching accounts
+
 
     const acc = awsAccounts.find((a) => String(a.id) === String(id));
     if (acc) {
