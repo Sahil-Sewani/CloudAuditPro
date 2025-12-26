@@ -48,6 +48,10 @@ app = FastAPI(title="CloudAuditPro API", version="0.1.0")
 
 frontend_origin = os.getenv("FRONTEND_ORIGIN", "https://app.cloudauditpro.app")
 
+# ✅ Links used in email reports
+APP_URL = os.getenv("APP_URL", frontend_origin)          # dashboard/app link
+WEBSITE_URL = os.getenv("WEBSITE_URL", "https://app.cloudauditpro.app")  # marketing site
+
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -127,102 +131,273 @@ def email_report(
       - Security Hub summary
       - S3 security summary
       - CloudTrail, Config, EBS, IAM status
-      - Helpful links & a 'View in CloudAuditPro' button
+      - Compliance score (based on these checks)
+      - Inventory rollups: EC2, VPC, RDS, SG
+      - Attack surface rollup
     """
     try:
         # Assume role & clients
         creds = assume_customer_role(inp.account_id, inp.role_name)
         region = inp.region
 
-        # --- Security Hub ---
+        # ---------- helpers ----------
+        def yesno(v: bool) -> str:
+            return "PASS" if v else "FAIL"
+
+        def badge(ok: bool) -> str:
+            bg = "#064e3b" if ok else "#7f1d1d"
+            fg = "#d1fae5" if ok else "#fee2e2"
+            txt = "PASS" if ok else "FAIL"
+            return (
+                '<span style="display:inline-block;padding:2px 8px;border-radius:999px;'
+                f'background:{bg};color:{fg};font-size:12px;font-weight:600">{txt}</span>'
+            )
+
+        def h(s: str) -> str:
+            return escape(str(s or ""))
+
+        # ---------- Security Hub ----------
         sh = securityhub_client_from_creds(creds, region)
         findings = list_findings(sh, inp.start_iso, inp.end_iso)
-        sec_hub_text = build_summary(findings)
+        finding_count = len(findings)
 
-        # --- S3 summary ---
+        # Top finding titles (bounded)
+        title_counts: Dict[str, int] = {}
+        for f in findings:
+            t = f.get("Title") or "Unknown"
+            title_counts[t] = title_counts.get(t, 0) + 1
+        top_titles = sorted(title_counts.items(), key=lambda x: x[1], reverse=True)[:8]
+
+        sec_hub_ok = finding_count == 0
+
+        # ---------- S3 ----------
         s3_list = get_s3_security_summary(creds, region)
         s3_total = len(s3_list)
-        s3_public = sum(1 for b in s3_list if b["public"])
-        s3_unenc = sum(1 for b in s3_list if not b["encryption_enabled"])
+        s3_public = sum(1 for b in s3_list if b.get("public"))
+        s3_unenc = sum(1 for b in s3_list if not b.get("encryption_enabled"))
 
-        # --- CloudTrail ---
+        # If you have no buckets, keep it as FAIL only if you want to enforce presence.
+        s3_ok = (s3_public == 0) and (s3_unenc == 0)
+
+        risky_buckets = []
+        for b in s3_list:
+            if b.get("public") or not b.get("encryption_enabled"):
+                risky_buckets.append(b)
+        risky_buckets = risky_buckets[:10]
+
+        # ---------- Core checks ----------
         ct = get_cloudtrail_status(creds, region)
         ct_ok = bool(ct.get("has_trail")) and bool(ct.get("multi_region_trail"))
 
-        # --- Config ---
         cfg = get_config_status(creds, region)
-        cfg_ok = bool(cfg.get("recorder_configured")) and bool(
-            cfg.get("recording_enabled")
-        )
+        cfg_ok = bool(cfg.get("recorder_configured")) and bool(cfg.get("recording_enabled"))
 
-        # --- EBS encryption ---
         ebs = get_ebs_encryption_status(creds, region)
-        ebs_ok = bool(ebs.get("default_encryption_enabled")) and len(
-            ebs.get("unencrypted_volume_ids", [])
-        ) == 0
+        ebs_ok = bool(ebs.get("default_encryption_enabled")) and len(ebs.get("unencrypted_volume_ids", [])) == 0
 
-        # --- IAM password policy ---
         iam_policy = get_iam_password_policy_status(creds, region)
         iam_ok = bool(iam_policy.get("policy_present"))
 
+        # Compliance score (simple: these 6 controls)
+        checks = [
+            ("Security Hub findings", sec_hub_ok),
+            ("S3 public access & encryption", s3_ok),
+            ("CloudTrail multi-region trail", ct_ok),
+            ("AWS Config recorder enabled", cfg_ok),
+            ("EBS default encryption", ebs_ok),
+            ("IAM password policy configured", iam_ok),
+        ]
+        passed = sum(1 for _, ok in checks if ok)
+        total = len(checks)
+        score = round((passed / total) * 100) if total else 0
+
+        # ---------- Inventory / Attack surface ----------
+        ec2_inv = get_ec2_inventory(creds, region)
+        vpc_inv = get_vpc_inventory(creds, region)
+        rds_inv = get_rds_inventory(creds, region)
+        sg_inv = get_sg_inventory(creds, region)
+        attack = build_attack_surface(creds, region)
+
+        ec2_count = int(ec2_inv.get("count", 0) or 0) if isinstance(ec2_inv, dict) else 0
+        vpc_count = int(vpc_inv.get("count", 0) or 0) if isinstance(vpc_inv, dict) else 0
+        rds_count = 0
+        if isinstance(rds_inv, dict):
+            rds_count = int(rds_inv.get("count", rds_inv.get("instance_count", 0)) or 0)
+        sg_count = int(sg_inv.get("count", 0) or 0) if isinstance(sg_inv, dict) else 0
+
+        # Attack surface keys can vary; keep it resilient
+        public_instance_count = int(attack.get("count", 0) or 0) if isinstance(attack, dict) else 0
+
+        # World-open SGs from SG inventory
+        sgs = sg_inv.get("security_groups", []) if isinstance(sg_inv, dict) else []
+        world_open_sgs = [g for g in sgs if g.get("world_open")]
+        world_open_sgs = world_open_sgs[:10]
+
+        # Public RDS list (bounded)
+        rds_instances = rds_inv.get("instances", []) if isinstance(rds_inv, dict) else []
+        public_rds = [db for db in rds_instances if db.get("publicly_accessible")]
+        public_rds = public_rds[:10]
+
         # ---------- Plain-text fallback ----------
-        s3_text = (
-            f"=== S3 Security Summary ===\n"
-            f"Buckets: {s3_total}  |  Public: {s3_public}  |  Unencrypted: {s3_unenc}\n"
+        body_text = build_summary(findings)
+        body_text += "\n\n" + render_s3_section(
+            {
+                "total_buckets": s3_total,
+                "public_buckets": s3_public,
+                "unencrypted_buckets": s3_unenc,
+                "buckets": s3_list,
+            }
         )
-        ct_text = (
-            "=== CloudTrail ===\n"
-            f"Status: {'PASS' if ct_ok else 'FAIL'}; "
-            f"has_trail={ct.get('has_trail')}, "
-            f"multi_region={ct.get('multi_region_trail')}, "
-            f"trail_count={ct.get('trail_count')}\n"
-        )
-        cfg_text = (
-            "=== AWS Config ===\n"
-            f"Status: {'PASS' if cfg_ok else 'FAIL'}; "
-            f"recorder_configured={cfg.get('recorder_configured')}, "
-            f"recording_enabled={cfg.get('recording_enabled')}\n"
-        )
-        ebs_text = (
-            "=== EBS Encryption ===\n"
-            f"Status: {'PASS' if ebs_ok else 'FAIL'}; "
-            f"default_encryption_enabled={ebs.get('default_encryption_enabled')}, "
-            f"total_volumes={ebs.get('total_volumes')}, "
-            f"unencrypted_volume_ids={ebs.get('unencrypted_volume_ids')}\n"
-        )
-        iam_text = (
-            "=== IAM Password Policy ===\n"
-            f"Status: {'PASS' if iam_ok else 'FAIL'}; "
-            f"policy_present={iam_policy.get('policy_present')}\n"
+        body_text += (
+            f"\n\n=== Checks ===\n"
+            f"Security Hub: {yesno(sec_hub_ok)} (findings={finding_count})\n"
+            f"S3: {yesno(s3_ok)} (total={s3_total}, public={s3_public}, unencrypted={s3_unenc})\n"
+            f"CloudTrail: {yesno(ct_ok)} (trails={ct.get('trail_count')}, multi_region={ct.get('multi_region_trail')})\n"
+            f"AWS Config: {yesno(cfg_ok)} (recorders={cfg.get('recorder_count')}, recording={cfg.get('recording_enabled')})\n"
+            f"EBS: {yesno(ebs_ok)} (default={ebs.get('default_encryption_enabled')}, unencrypted={len(ebs.get('unencrypted_volume_ids', []))})\n"
+            f"IAM Password Policy: {yesno(iam_ok)}\n"
+            f"\n=== Inventory ===\nEC2={ec2_count}, VPC={vpc_count}, RDS={rds_count}, SG={sg_count}\n"
+            f"\n=== Attack Surface ===\nPublic-running EC2 instances={public_instance_count}, World-open SGs={len(world_open_sgs)}\n"
         )
 
-        body_text = (
-            f"{sec_hub_text}\n\n"
-            f"{s3_text}\n"
-            f"{ct_text}\n"
-            f"{cfg_text}\n"
-            f"{ebs_text}\n"
-            f"{iam_text}"
+        # ---------- Links ----------
+        body_text += (
+            f"\n\nOpen dashboard: {APP_URL}"
+            f"\nWebsite: {WEBSITE_URL}\n"
         )
 
-        # ---------- HTML body omitted for brevity (unchanged) ----------
-        # Use your existing HTML template here:
-        # body_html = f"""<!DOCTYPE html> ... """
-        body_html = body_text  # placeholder if you don't have HTML
+
+        # ---------- HTML email ----------
+        bar_color = "#10b981" if score >= 80 else ("#f59e0b" if score >= 50 else "#ef4444")
+        body_html = f"""<!doctype html>
+<html>
+  <body style="margin:0;background:#0b1020;color:#e5e7eb;font-family:Arial,Helvetica,sans-serif;">
+    <div style="max-width:900px;margin:0 auto;padding:24px;">
+      <div style="padding:18px 18px;border:1px solid rgba(99,102,241,.35);border-radius:16px;background:rgba(0,0,0,.35);">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:center;">
+          <div>
+            <div style="font-size:14px;letter-spacing:.18em;text-transform:uppercase;color:#a5b4fc;">CloudAuditPro</div>
+            <div style="font-size:20px;font-weight:700;margin-top:4px;">AWS Security Report</div>
+
+            <div style="margin-top:6px;font-size:13px;">
+            <a href="{APP_URL}" style="color:#93c5fd;text-decoration:none;font-weight:600;">
+                Open dashboard →
+            </a>
+            <span style="color:#64748b;"> · </span>
+            <a href="{WEBSITE_URL}" style="color:#93c5fd;text-decoration:none;">
+                Visit website
+            </a>
+            </div>
+
+            <div style="font-size:12px;color:#9ca3af;margin-top:4px;">
+              Account: <b>{h(inp.account_id)}</b> · Region: <b>{h(region)}</b>
+            </div>
+            <div style="font-size:12px;color:#9ca3af;margin-top:2px;">
+              Window: {h(inp.start_iso or "N/A")} → {h(inp.end_iso or "N/A")}
+            </div>
+          </div>
+          <div style="text-align:right;min-width:220px;">
+            <div style="font-size:12px;color:#9ca3af;margin-bottom:6px;">Compliance score</div>
+            <div style="font-size:28px;font-weight:800;line-height:1;">{score}%</div>
+            <div style="height:10px;background:#111827;border-radius:999px;overflow:hidden;margin-top:8px;border:1px solid rgba(148,163,184,.25);">
+              <div style="height:10px;width:{score}%;background:{bar_color};"></div>
+            </div>
+            <div style="font-size:12px;color:#9ca3af;margin-top:6px;">{passed}/{total} checks passing</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:14px;">
+        <div style="flex:1;min-width:260px;padding:14px;border-radius:16px;background:rgba(0,0,0,.35);border:1px solid rgba(148,163,184,.2);">
+          <div style="font-weight:700;margin-bottom:8px;">Core checks</div>
+          <table style="width:100%;border-collapse:collapse;font-size:13px;">
+            <tr><td style="padding:6px 0;color:#c7d2fe;">Security Hub findings</td><td style="padding:6px 0;text-align:right;">{badge(sec_hub_ok)}</td></tr>
+            <tr><td style="padding:6px 0;color:#c7d2fe;">S3 public access &amp; encryption</td><td style="padding:6px 0;text-align:right;">{badge(s3_ok)}</td></tr>
+            <tr><td style="padding:6px 0;color:#c7d2fe;">CloudTrail multi-region</td><td style="padding:6px 0;text-align:right;">{badge(ct_ok)}</td></tr>
+            <tr><td style="padding:6px 0;color:#c7d2fe;">AWS Config recording</td><td style="padding:6px 0;text-align:right;">{badge(cfg_ok)}</td></tr>
+            <tr><td style="padding:6px 0;color:#c7d2fe;">EBS default encryption</td><td style="padding:6px 0;text-align:right;">{badge(ebs_ok)}</td></tr>
+            <tr><td style="padding:6px 0;color:#c7d2fe;">IAM password policy</td><td style="padding:6px 0;text-align:right;">{badge(iam_ok)}</td></tr>
+          </table>
+        </div>
+
+        <div style="flex:1;min-width:260px;padding:14px;border-radius:16px;background:rgba(0,0,0,.35);border:1px solid rgba(148,163,184,.2);">
+          <div style="font-weight:700;margin-bottom:8px;">Inventory rollup</div>
+          <div style="font-size:13px;color:#e5e7eb;line-height:1.8;">
+            EC2 instances: <b>{ec2_count}</b><br/>
+            VPCs: <b>{vpc_count}</b><br/>
+            RDS instances: <b>{rds_count}</b><br/>
+            Security groups: <b>{sg_count}</b><br/>
+            Attack surface (public-running EC2): <b>{public_instance_count}</b><br/>
+            World-open SGs: <b>{len(world_open_sgs)}</b>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px;padding:14px;border-radius:16px;background:rgba(0,0,0,.35);border:1px solid rgba(148,163,184,.2);">
+        <div style="font-weight:700;margin-bottom:8px;">Security Hub findings</div>
+        <div style="font-size:13px;color:#e5e7eb;">
+          Total findings: <b>{finding_count}</b>
+        </div>
+        <div style="margin-top:8px;font-size:13px;color:#cbd5e1;">
+          {("".join([f"<div>• {h(t)} — {c}</div>" for (t,c) in top_titles]) if top_titles else "<div>No findings detected in this window.</div>")}
+        </div>
+      </div>
+
+      <div style="margin-top:12px;padding:14px;border-radius:16px;background:rgba(0,0,0,.35);border:1px solid rgba(148,163,184,.2);">
+        <div style="font-weight:700;margin-bottom:8px;">S3 summary</div>
+        <div style="font-size:13px;color:#e5e7eb;">
+          Buckets: <b>{s3_total}</b> · Public: <b>{s3_public}</b> · Unencrypted: <b>{s3_unenc}</b>
+        </div>
+        <div style="margin-top:8px;font-size:13px;color:#cbd5e1;">
+          {("".join([f"<div>• {h(b.get('bucket'))} — {('PUBLIC' if b.get('public') else 'private')}, {('ENCRYPTED' if b.get('encryption_enabled') else 'NO-ENCRYPTION')}</div>" for b in risky_buckets]) if risky_buckets else "<div>No obviously risky buckets detected.</div>")}
+        </div>
+      </div>
+
+      <div style="margin-top:12px;display:flex;flex-wrap:wrap;gap:12px;">
+        <div style="flex:1;min-width:260px;padding:14px;border-radius:16px;background:rgba(0,0,0,.35);border:1px solid rgba(148,163,184,.2);">
+          <div style="font-weight:700;margin-bottom:8px;">World-open security groups (top)</div>
+          <div style="font-size:13px;color:#cbd5e1;">
+            {("".join([f"<div>• {h(g.get('group_id'))} — {h(g.get('group_name') or '')}</div>" for g in world_open_sgs]) if world_open_sgs else "<div>No world-open SGs detected.</div>")}
+          </div>
+        </div>
+
+        <div style="flex:1;min-width:260px;padding:14px;border-radius:16px;background:rgba(0,0,0,.35);border:1px solid rgba(148,163,184,.2);">
+          <div style="font-weight:700;margin-bottom:8px;">Public RDS instances (top)</div>
+          <div style="font-size:13px;color:#cbd5e1;">
+            {("".join([f"<div>• {h(db.get('id'))} — {h(db.get('engine'))}</div>" for db in public_rds]) if public_rds else "<div>No publicly accessible RDS instances detected.</div>")}
+          </div>
+        </div>
+      </div>
+
+        <div style="margin-top:14px;font-size:12px;color:#9ca3af;">
+        Generated by CloudAuditPro ·
+        <a href="{WEBSITE_URL}" style="color:#93c5fd;text-decoration:none;">
+            cloudauditpro.app
+        </a>
+        ·
+        <a href="{APP_URL}" style="color:#93c5fd;text-decoration:none;">
+            Open dashboard
+        </a>
+        </div>
+    </div>
+  </body>
+</html>
+"""
 
         # ---------- Send with SES ----------
         to_addr = inp.email_to or TEST_TO
         if not (SES_FROM and to_addr):
-            raise HTTPException(
-                status_code=400, detail="SES_FROM_ADDRESS or recipient missing"
-            )
+            raise HTTPException(status_code=400, detail="SES_FROM_ADDRESS or recipient missing")
 
         ses = boto3.client("ses", region_name=REGION)
         ses.send_email(
             Source=SES_FROM,
             Destination={"ToAddresses": [to_addr]},
             Message={
-                "Subject": {"Data": "Weekly AWS Security Report", "Charset": "UTF-8"},
+                "Subject": {
+                    "Data": f"CloudAuditPro Report — {inp.account_id} ({region}) — Score {score}%",
+                    "Charset": "UTF-8",
+                },
                 "Body": {
                     "Text": {"Data": body_text, "Charset": "UTF-8"},
                     "Html": {"Data": body_html, "Charset": "UTF-8"},
@@ -230,11 +405,9 @@ def email_report(
             },
         )
 
-        return {"sent_to": to_addr, "length": len(body_html)}
+        return {"sent_to": to_addr, "score": score, "finding_count": finding_count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
 @app.post("/aws/s3-summary")
 def s3_summary(
     inp: ScanInput,
