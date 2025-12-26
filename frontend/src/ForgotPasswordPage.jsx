@@ -27,9 +27,7 @@ export default function ForgotPasswordPage() {
         throw new Error(data.detail || "Failed to request password reset");
       }
 
-      setMessage(
-        "If that email exists, a password reset link has been sent."
-      );
+      setMessage("If that email exists, a password reset link has been sent.");
     } catch (err) {
       setError(err.message || "Something went wrong");
     } finally {
@@ -93,7 +91,7 @@ export default function ForgotPasswordPage() {
           </form>
 
           <div className="mt-4 text-xs text-slate-400 flex justify-between">
-            <a href="/" className="hover:text-indigo-300">
+            <a href="/app" className="hover:text-indigo-300">
               ← Back to login
             </a>
           </div>

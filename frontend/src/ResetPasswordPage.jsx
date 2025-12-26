@@ -137,7 +137,7 @@ export default function ResetPasswordPage() {
 
             <div className="mt-5 text-xs text-slate-400 flex justify-between">
               <a
-                href="/"
+                href="/app"
                 className="inline-flex items-center gap-1 hover:text-indigo-300 transition-colors"
               >
                 <span>←</span>

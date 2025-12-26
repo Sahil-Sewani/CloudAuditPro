@@ -218,6 +218,8 @@ export default function App({ user, onLogout }) {
   
   const clearConnectionStatus = () => setConnectionStatus(null);
   
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
 
   // Use the selected region for console links, with a safe default
   const consoleRegion = region || "us-east-1";
@@ -1328,57 +1330,141 @@ const rdsCount =
           </div>
         </div>
 
-        <div className="flex items-center gap-4 text-sm">
-          {/* Marketing / info links – open in new tab */}
-          <a
-            href="/about"
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs md:text-sm text-indigo-200 hover:text-white underline-offset-4 hover:underline"
-          >
-            About
-          </a>
-          <a
-            href="/security"
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs md:text-sm text-indigo-200 hover:text-white underline-offset-4 hover:underline"
-          >
-            Security
-          </a>
-          <a
-            href="/how-it-works"
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs md:text-sm text-indigo-200 hover:text-white underline-offset-4 hover:underline"
-          >
-            How it works
-          </a>
+        <div className="flex items-center gap-3">
+  {/* Desktop links */}
+  <div className="hidden md:flex items-center gap-4 text-sm">
+    {/* Marketing / info links – open in new tab */}
+    <a
+      href="/about"
+      target="_blank"
+      rel="noreferrer"
+      className="text-xs md:text-sm text-indigo-200 hover:text-white underline-offset-4 hover:underline"
+    >
+      About
+    </a>
+    <a
+      href="/security"
+      target="_blank"
+      rel="noreferrer"
+      className="text-xs md:text-sm text-indigo-200 hover:text-white underline-offset-4 hover:underline"
+    >
+      Security
+    </a>
+    <a
+      href="/how-it-works"
+      target="_blank"
+      rel="noreferrer"
+      className="text-xs md:text-sm text-indigo-200 hover:text-white underline-offset-4 hover:underline"
+    >
+      How it works
+    </a>
 
-          {isSyncing && (
-            <div className="flex items-center gap-2 text-[11px] text-amber-300">
-              <span className="relative flex h-3 w-3">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75 animate-ping" />
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-400" />
-              </span>
-              <span>System syncing checks…</span>
-            </div>
-          )}
+    {isSyncing && (
+      <div className="flex items-center gap-2 text-[11px] text-amber-300">
+        <span className="relative flex h-3 w-3">
+          <span className="absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75 animate-ping" />
+          <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-400" />
+        </span>
+        <span>System syncing checks…</span>
+      </div>
+    )}
 
-          {user && (
-            <span className="text-gray-200 hidden sm:inline">
-              {user.email}
-            </span>
-          )}
-          {onLogout && (
-            <button
-              onClick={onLogout}
-              className="px-3 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-400/60 text-xs text-indigo-100"
-            >
-              Log out
-            </button>
-          )}
-        </div>
+    {user && (
+      <span className="text-gray-200 hidden sm:inline">
+        {user.email}
+      </span>
+    )}
+
+    {onLogout && (
+      <button
+        onClick={onLogout}
+        className="px-3 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-400/60 text-xs text-indigo-100"
+      >
+        Log out
+      </button>
+    )}
+  </div>
+
+  {/* Mobile: hamburger */}
+  <div className="md:hidden relative">
+    <button
+      type="button"
+      onClick={() => setMobileMenuOpen((v) => !v)}
+      className="inline-flex items-center justify-center rounded-lg border border-indigo-500/30 bg-black/30 px-2.5 py-2 text-indigo-100 hover:bg-black/50"
+      aria-label="Open menu"
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+        <path
+          d="M4 7h16M4 12h16M4 17h16"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+      </svg>
+    </button>
+
+    {mobileMenuOpen && (
+      <div className="absolute right-0 mt-2 w-56 rounded-xl border border-indigo-900/60 bg-slate-950/95 backdrop-blur shadow-xl shadow-indigo-900/40 p-2 z-50">
+        <a
+          href="/about"
+          target="_blank"
+          rel="noreferrer"
+          onClick={() => setMobileMenuOpen(false)}
+          className="block rounded-lg px-3 py-2 text-sm text-indigo-100 hover:bg-indigo-500/10"
+        >
+          About
+        </a>
+        <a
+          href="/security"
+          target="_blank"
+          rel="noreferrer"
+          onClick={() => setMobileMenuOpen(false)}
+          className="block rounded-lg px-3 py-2 text-sm text-indigo-100 hover:bg-indigo-500/10"
+        >
+          Security
+        </a>
+        <a
+          href="/how-it-works"
+          target="_blank"
+          rel="noreferrer"
+          onClick={() => setMobileMenuOpen(false)}
+          className="block rounded-lg px-3 py-2 text-sm text-indigo-100 hover:bg-indigo-500/10"
+        >
+          How it works
+        </a>
+
+        <div className="my-2 border-t border-indigo-900/60" />
+
+        {user && (
+          <div className="px-3 pb-2 text-xs text-slate-300">
+            Signed in as{" "}
+            <span className="text-slate-100 break-all">{user.email}</span>
+          </div>
+        )}
+
+        {isSyncing && (
+          <div className="px-3 pb-2 text-xs text-amber-300">
+            System syncing checks…
+          </div>
+        )}
+
+        {onLogout && (
+          <button
+            type="button"
+            onClick={() => {
+              setMobileMenuOpen(false);
+              onLogout();
+            }}
+            className="w-full rounded-lg px-3 py-2 text-sm text-rose-100 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30"
+          >
+            Log out
+          </button>
+        )}
+      </div>
+    )}
+  </div>
+</div>
+
       </header>
 
       {/* Main content */}
