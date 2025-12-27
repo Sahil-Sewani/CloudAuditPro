@@ -1333,29 +1333,13 @@ const rdsCount =
         <div className="flex items-center gap-3">
   {/* Desktop links */}
   <div className="hidden md:flex items-center gap-4 text-sm">
-    {/* Marketing / info links – open in new tab */}
-    <a
-      href="/about"
-      target="_blank"
-      rel="noreferrer"
-      className="text-xs md:text-sm text-indigo-200 hover:text-white underline-offset-4 hover:underline"
-    >
+    <a href="/about" target="_blank" rel="noreferrer" className="text-xs md:text-sm text-indigo-200 hover:text-white underline-offset-4 hover:underline">
       About
     </a>
-    <a
-      href="/security"
-      target="_blank"
-      rel="noreferrer"
-      className="text-xs md:text-sm text-indigo-200 hover:text-white underline-offset-4 hover:underline"
-    >
+    <a href="/security" target="_blank" rel="noreferrer" className="text-xs md:text-sm text-indigo-200 hover:text-white underline-offset-4 hover:underline">
       Security
     </a>
-    <a
-      href="/how-it-works"
-      target="_blank"
-      rel="noreferrer"
-      className="text-xs md:text-sm text-indigo-200 hover:text-white underline-offset-4 hover:underline"
-    >
+    <a href="/how-it-works" target="_blank" rel="noreferrer" className="text-xs md:text-sm text-indigo-200 hover:text-white underline-offset-4 hover:underline">
       How it works
     </a>
 
@@ -1369,97 +1353,37 @@ const rdsCount =
       </div>
     )}
 
-      {user && (
-        <div className="hidden sm:flex items-center gap-3">
-          <span className="text-gray-200">
-            {user.email}
-          </span>
-
-          <a
-            href="/forgot-password"
-            className="text-xs text-indigo-200 hover:text-white underline-offset-4 hover:underline"
-          >
-            Change password
-          </a>
-        </div>
-      )}
-
-
-    {onLogout && (
-      <button
-        onClick={onLogout}
-        className="px-3 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-400/60 text-xs text-indigo-100"
-      >
-        Log out
-      </button>
+    {user && (
+      <span className="text-gray-200 hidden sm:inline">
+        {user.email}
+      </span>
     )}
-  </div>
+  </div> {/* ✅ IMPORTANT: closes Desktop links */}
 
-  {/* Mobile: hamburger */}
-  <div className="md:hidden relative">
+  {/* Hamburger (show on desktop too) */}
+  <div className="relative">
     <button
-      type="button"
-      onClick={() => setMobileMenuOpen((v) => !v)}
-      className="inline-flex items-center justify-center rounded-lg border border-indigo-500/30 bg-black/30 px-2.5 py-2 text-indigo-100 hover:bg-black/50"
-      aria-label="Open menu"
-    >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-        <path
-          d="M4 7h16M4 12h16M4 17h16"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-        />
-      </svg>
-    </button>
+    type="button"
+    onClick={() => setMobileMenuOpen((v) => !v)}
+    className="inline-flex items-center justify-center rounded-lg border border-indigo-500/30 bg-black/30 px-2.5 py-2 text-indigo-100 hover:bg-black/50"
+    aria-label="Open menu"
+  >
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+      <path
+        d="M4 7h16M4 12h16M4 17h16"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  </button>
 
     {mobileMenuOpen && (
       <div className="absolute right-0 mt-2 w-56 rounded-xl border border-indigo-900/60 bg-slate-950/95 backdrop-blur shadow-xl shadow-indigo-900/40 p-2 z-50">
-        <a
-          href="/about"
-          target="_blank"
-          rel="noreferrer"
-          onClick={() => setMobileMenuOpen(false)}
-          className="block rounded-lg px-3 py-2 text-sm text-indigo-100 hover:bg-indigo-500/10"
-        >
-          About
-        </a>
-        <a
-          href="/security"
-          target="_blank"
-          rel="noreferrer"
-          onClick={() => setMobileMenuOpen(false)}
-          className="block rounded-lg px-3 py-2 text-sm text-indigo-100 hover:bg-indigo-500/10"
-        >
-          Security
-        </a>
-        <a
-          href="/how-it-works"
-          target="_blank"
-          rel="noreferrer"
-          onClick={() => setMobileMenuOpen(false)}
-          className="block rounded-lg px-3 py-2 text-sm text-indigo-100 hover:bg-indigo-500/10"
-        >
-          How it works
-        </a>
 
-        {/* Divider */}
         <div className="my-2 border-t border-indigo-900/60" />
 
-        {user && (
-          <div className="px-3 pb-2 text-xs text-slate-300">
-            Signed in as{" "}
-            <span className="text-slate-100 break-all">{user.email}</span>
-          </div>
-        )}
-
-        {isSyncing && (
-          <div className="px-3 pb-2 text-xs text-amber-300">
-            System syncing checks…
-          </div>
-        )}
-
-            {/* ✅ NEW */}
+        {/* Actions go here */}
         <a
           href="/forgot-password"
           onClick={() => setMobileMenuOpen(false)}
@@ -1468,6 +1392,28 @@ const rdsCount =
           Change password
         </a>
 
+        <button
+          type="button"
+          onClick={async () => {
+            setMobileMenuOpen(false);
+            const typed = window.prompt(
+              "This will permanently delete your CloudAuditPro account.\n\nType DELETE to confirm:"
+            );
+            if (typed !== "DELETE") return;
+
+            try {
+              await apiFetch("/auth/me", { method: "DELETE", token });
+              onLogout();
+              window.location.href = "/";
+            } catch (err) {
+              alert(err.message || "Failed to delete account");
+            }
+          }}
+          className="w-full rounded-lg px-3 py-2 text-sm text-rose-100 bg-rose-900/30 hover:bg-rose-900/40 border border-rose-700/40 mt-1"
+        >
+          Delete account
+        </button>
+
         {onLogout && (
           <button
             type="button"
@@ -1475,7 +1421,7 @@ const rdsCount =
               setMobileMenuOpen(false);
               onLogout();
             }}
-            className="w-full rounded-lg px-3 py-2 text-sm text-rose-100 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30"
+            className="w-full rounded-lg px-3 py-2 text-sm text-rose-100 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 mt-2"
           >
             Log out
           </button>
@@ -1484,6 +1430,7 @@ const rdsCount =
     )}
   </div>
 </div>
+
 
       </header>
 

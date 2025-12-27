@@ -69,6 +69,39 @@ def login_user(
 def me(current_user=Depends(get_current_user)):
     return current_user
 
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+def delete_my_account(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    # Delete org + any org AWS connections (so FK constraints don’t block user delete)
+    org = (
+        db.query(models.Organization)
+        .filter(models.Organization.owner_user_id == current_user.id)
+        .first()
+    )
+    if org:
+        db.query(models.AwsConnection).filter(
+            models.AwsConnection.org_id == org.id
+        ).delete(synchronize_session=False)
+        db.delete(org)
+
+    # Delete saved AWS accounts
+    db.query(models.AwsAccount).filter(
+        models.AwsAccount.user_id == current_user.id
+    ).delete(synchronize_session=False)
+
+    # Delete password reset tokens
+    for t in db.query(models.PasswordResetToken).all():
+        if str(t.user_id) == str(current_user.id):
+            db.delete(t)
+
+    # Finally delete the user
+    db.delete(current_user)
+    db.commit()
+    return
+
+
 
 @router.post("/request-password-reset")
 def request_password_reset(
