@@ -1369,11 +1369,21 @@ const rdsCount =
       </div>
     )}
 
-    {user && (
-      <span className="text-gray-200 hidden sm:inline">
-        {user.email}
-      </span>
-    )}
+      {user && (
+        <div className="hidden sm:flex items-center gap-3">
+          <span className="text-gray-200">
+            {user.email}
+          </span>
+
+          <a
+            href="/forgot-password"
+            className="text-xs text-indigo-200 hover:text-white underline-offset-4 hover:underline"
+          >
+            Change password
+          </a>
+        </div>
+      )}
+
 
     {onLogout && (
       <button
@@ -1433,6 +1443,7 @@ const rdsCount =
           How it works
         </a>
 
+        {/* Divider */}
         <div className="my-2 border-t border-indigo-900/60" />
 
         {user && (
@@ -1447,6 +1458,15 @@ const rdsCount =
             System syncing checks…
           </div>
         )}
+
+            {/* ✅ NEW */}
+        <a
+          href="/forgot-password"
+          onClick={() => setMobileMenuOpen(false)}
+          className="block rounded-lg px-3 py-2 text-sm text-indigo-100 hover:bg-indigo-500/10"
+        >
+          Change password
+        </a>
 
         {onLogout && (
           <button
