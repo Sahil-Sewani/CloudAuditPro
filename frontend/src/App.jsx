@@ -1566,6 +1566,40 @@ const rdsCount =
             </pre>
           </div>
         )}
+
+        {/* Option B: Manual IAM setup */}
+<div className="mt-3 rounded-lg border border-slate-800 bg-slate-950/50 p-3">
+  <div className="text-[11px] text-gray-300 font-semibold">
+    Option B (manual): create the role yourself
+  </div>
+  <div className="mt-1 text-[11px] text-gray-400 leading-relaxed">
+    If you don’t want to use CloudFormation, create an IAM Role named{" "}
+    <span className="font-mono text-gray-200">CloudAuditProReadRole</span> with:
+    <ul className="list-disc ml-4 mt-2 space-y-1">
+      <li>
+        <span className="text-gray-200">Trusted entity:</span> Another AWS account
+        (cross-account role)
+      </li>
+      <li>
+        <span className="text-gray-200">Trust policy principal:</span>{" "}
+        <span className="font-mono text-gray-200">
+          arn:aws:iam::{CLOUDAUDITPRO_ACCOUNT_ID}:role/CloudAuditProAppRole
+        </span>
+      </li>
+      <li>
+        <span className="text-gray-200">Permissions:</span> attach the AWS managed
+        policies shown in the template (S3 ReadOnly, SecurityHub ReadOnly, Config),
+        plus the inline policies (CloudTrail, EBS encryption, inventory reads).
+      </li>
+    </ul>
+  </div>
+
+      <div className="mt-2 text-[11px] text-gray-400">
+        Tip: after creating it, come back here and click <b>Save AWS account</b> —
+        CloudAuditPro will validate the role and show <b>Connected ✓</b>.
+      </div>
+    </div>
+
       </div>
     </div>
   </li>
