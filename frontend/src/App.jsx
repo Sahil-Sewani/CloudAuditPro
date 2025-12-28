@@ -27,7 +27,7 @@ Parameters:
 
   ExternalRoleName:
     Type: String
-    Default: CloudAuditProAppRole
+    Default: CloudAuditProInstanceRole
     Description: Role in the CloudAuditPro account that will assume this role.
 
 Resources:
@@ -1530,7 +1530,7 @@ const rdsCount =
       <li>
         <span className="text-gray-200">Trust policy principal:</span>{" "}
         <span className="font-mono text-gray-200">
-          arn:aws:iam::{CLOUDAUDITPRO_ACCOUNT_ID}:role/CloudAuditProAppRole
+          arn:aws:iam::{CLOUDAUDITPRO_ACCOUNT_ID}:role/CloudAuditProInstanceRole
         </span>
       </li>
       <li>
