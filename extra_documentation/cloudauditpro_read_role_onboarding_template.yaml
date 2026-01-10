@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  CloudAuditPro read-only IAM role that allows CloudAuditPro
+  to securely scan this AWS account for security and compliance data.
+  No write permissions are granted.
+
+Parameters:
+  ExternalAccountId:
+    Type: String
+    Description: CloudAuditPro AWS account ID (the account that will assume this role)
+    Default: "851725210465"
+    MinLength: 12
+    MaxLength: 12
+    AllowedPattern: "^[0-9]{12}$"
+
+  ExternalRoleName:
+    Type: String
+    Description: IAM role in the CloudAuditPro account that will assume this role
+    Default: CloudAuditProInstanceRole
+
+Resources:
+  CloudAuditProReadRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CloudAuditProReadRole
+      Description: Read-only role assumed by CloudAuditPro for security scans
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub arn:aws:iam::${ExternalAccountId}:role/${ExternalRoleName}
+            Action: sts:AssumeRole
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+        - arn:aws:iam::aws:policy/AWSSecurityHubReadOnlyAccess
+        - arn:aws:iam::aws:policy/AWSConfigUserAccess
+
+      Policies:
+        - PolicyName: CloudAuditPro-CloudTrailRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudtrail:DescribeTrails
+                  - cloudtrail:GetTrailStatus
+                  - cloudtrail:ListTrails
+                Resource: "*"
+
+        - PolicyName: CloudAuditPro-ConfigRecorderRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - config:DescribeConfigurationRecorders
+                  - config:DescribeConfigurationRecorderStatus
+                  - config:DescribeDeliveryChannels
+                  - config:DescribeDeliveryChannelStatus
+                Resource: "*"
+
+        - PolicyName: CloudAuditPro-EBSEncryptionRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:GetEbsEncryptionByDefault
+                  - ec2:DescribeVolumes
+                Resource: "*"
+
+        - PolicyName: CloudAuditPro-IAMPasswordPolicyRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:GetAccountPasswordPolicy
+                Resource: "*"
+
+        - PolicyName: CloudAuditPro-ResourceInventoryRead
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeRouteTables
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeVolumes
+                  - ec2:GetEbsEncryptionByDefault
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeNetworkInterfaces
+                  - rds:DescribeDBInstances
+                Resource: "*"
+
+Outputs:
+  CloudAuditProReadRoleArn:
+    Description: ARN of the CloudAuditPro read-only role to paste into CloudAuditPro
+    Value: !GetAtt CloudAuditProReadRole.Arn

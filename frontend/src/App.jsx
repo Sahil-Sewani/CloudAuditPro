@@ -268,6 +268,26 @@ export default function App({ user, onLogout }) {
     }
   };
 
+  const handleLaunchCloudFormation = async () => {
+    try {
+      const data = await apiFetch("/aws/cfn-template-url", {
+        token,
+        method: "GET",
+      });
+  
+      const templateUrl = encodeURIComponent(data.template_url);
+      const region = "us-east-1";
+  
+      const launchUrl = `https://${region}.console.aws.amazon.com/cloudformation/home?region=${region}#/stacks/create/review?templateURL=${templateUrl}`;
+  
+      window.open(launchUrl, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      console.error("Failed to launch CloudFormation:", err);
+      alert("Failed to generate CloudFormation launch link.");
+    }
+  };
+  
+
 
   // AWS inventory
   const [ec2Inventory, setEc2Inventory] = useState(null);
@@ -1489,6 +1509,20 @@ const rdsCount =
         Option A (recommended): deploy the CloudFormation template below. This creates{" "}
         <span className="font-mono">CloudAuditProReadRole</span> with read-only permissions and the correct trust policy.
       </p>
+
+      <div className="mt-2">
+        <button
+          type="button"
+          onClick={handleLaunchCloudFormation}
+          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500"
+        >
+          🚀 Launch CloudFormation Stack
+        </button>
+        <div className="mt-1 text-[10px] text-gray-400">
+          Opens AWS Console with the template preloaded
+        </div>
+      </div>
+
 
       <div className="mt-2">
         <button
