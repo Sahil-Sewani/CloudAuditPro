@@ -11,6 +11,7 @@ from .auth_utils import get_current_user
 from . import models
 import boto3
 from html import escape
+from botocore.exceptions import ClientError
 
 from .aws import (
     assume_customer_role,
@@ -157,18 +158,55 @@ def email_report(
             return escape(str(s or ""))
 
         # ---------- Security Hub ----------
-        sh = securityhub_client_from_creds(creds, region)
-        findings = list_findings(sh, inp.start_iso, inp.end_iso)
-        finding_count = len(findings)
+        sec_hub_enabled = True
+        sec_hub_error_msg = ""
+        findings = []
+        finding_count = 0
+        top_titles = []
 
-        # Top finding titles (bounded)
-        title_counts: Dict[str, int] = {}
-        for f in findings:
-            t = f.get("Title") or "Unknown"
-            title_counts[t] = title_counts.get(t, 0) + 1
-        top_titles = sorted(title_counts.items(), key=lambda x: x[1], reverse=True)[:8]
+        try:
+            sh = securityhub_client_from_creds(creds, region)
+            findings = list_findings(sh, inp.start_iso, inp.end_iso)
+            finding_count = len(findings)
 
-        sec_hub_ok = finding_count == 0
+            # Top finding titles (bounded)
+            title_counts: Dict[str, int] = {}
+            for f in findings:
+                t = f.get("Title") or "Unknown"
+                title_counts[t] = title_counts.get(t, 0) + 1
+            top_titles = sorted(title_counts.items(), key=lambda x: x[1], reverse=True)[:8]
+
+        except ClientError as e:
+            # When Security Hub isn't enabled/subscribed in the target account+region
+            if e.response.get("Error", {}).get("Code") in ("InvalidAccessException", "AccessDeniedException"):
+                sec_hub_enabled = False
+                sec_hub_error_msg = "Security Hub is not enabled in this account/region."
+            else:
+                raise
+        except Exception as e:
+            # Fallback (handles string-based errors from wrappers)
+            msg = str(e)
+            if "not subscribed to AWS Security Hub" in msg or "InvalidAccessException" in msg:
+                sec_hub_enabled = False
+                sec_hub_error_msg = "Security Hub is not enabled in this account/region."
+            else:
+                raise
+
+        # If SH isn't enabled, treat this check as "not passing" (but don't crash)
+        sec_hub_ok = (finding_count == 0) if sec_hub_enabled else False
+
+        # Precompute display helpers for HTML
+        sec_hub_badge = (
+            badge(sec_hub_ok)
+            if sec_hub_enabled
+            else '<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:#1f2937;color:#e5e7eb;border:1px solid rgba(148,163,184,.25);font-size:11px;">NOT ENABLED</span>'
+        )
+        sec_hub_note_html = (
+            f'<div style="margin-top:6px;font-size:12px;color:#fbbf24;">{h(sec_hub_error_msg)}</div>'
+            if (not sec_hub_enabled and sec_hub_error_msg)
+            else ""
+        )
+
 
         # ---------- S3 ----------
         s3_list = get_s3_security_summary(creds, region)
@@ -250,8 +288,7 @@ def email_report(
         )
         body_text += (
             f"\n\n=== Checks ===\n"
-            f"Security Hub: {yesno(sec_hub_ok)} (findings={finding_count})\n"
-            f"S3: {yesno(s3_ok)} (total={s3_total}, public={s3_public}, unencrypted={s3_unenc})\n"
+            f"Security Hub: {'NOT ENABLED' if not sec_hub_enabled else yesno(sec_hub_ok)} (findings={finding_count})\n"            f"S3: {yesno(s3_ok)} (total={s3_total}, public={s3_public}, unencrypted={s3_unenc})\n"
             f"CloudTrail: {yesno(ct_ok)} (trails={ct.get('trail_count')}, multi_region={ct.get('multi_region_trail')})\n"
             f"AWS Config: {yesno(cfg_ok)} (recorders={cfg.get('recorder_count')}, recording={cfg.get('recording_enabled')})\n"
             f"EBS: {yesno(ebs_ok)} (default={ebs.get('default_encryption_enabled')}, unencrypted={len(ebs.get('unencrypted_volume_ids', []))})\n"
@@ -311,7 +348,7 @@ def email_report(
         <div style="flex:1;min-width:260px;padding:14px;border-radius:16px;background:rgba(0,0,0,.35);border:1px solid rgba(148,163,184,.2);">
           <div style="font-weight:700;margin-bottom:8px;">Core checks</div>
           <table style="width:100%;border-collapse:collapse;font-size:13px;">
-            <tr><td style="padding:6px 0;color:#c7d2fe;">Security Hub findings</td><td style="padding:6px 0;text-align:right;">{badge(sec_hub_ok)}</td></tr>
+            <tr><td style="padding:6px 0;color:#c7d2fe;">Security Hub findings</td><td style="padding:6px 0;text-align:right;">{sec_hub_badge}</td></tr>
             <tr><td style="padding:6px 0;color:#c7d2fe;">S3 public access &amp; encryption</td><td style="padding:6px 0;text-align:right;">{badge(s3_ok)}</td></tr>
             <tr><td style="padding:6px 0;color:#c7d2fe;">CloudTrail multi-region</td><td style="padding:6px 0;text-align:right;">{badge(ct_ok)}</td></tr>
             <tr><td style="padding:6px 0;color:#c7d2fe;">AWS Config recording</td><td style="padding:6px 0;text-align:right;">{badge(cfg_ok)}</td></tr>
@@ -336,7 +373,8 @@ def email_report(
       <div style="margin-top:12px;padding:14px;border-radius:16px;background:rgba(0,0,0,.35);border:1px solid rgba(148,163,184,.2);">
         <div style="font-weight:700;margin-bottom:8px;">Security Hub findings</div>
         <div style="font-size:13px;color:#e5e7eb;">
-          Total findings: <b>{finding_count}</b>
+        Total findings: <b>{finding_count}</b>
+        {sec_hub_note_html}
         </div>
         <div style="margin-top:8px;font-size:13px;color:#cbd5e1;">
           {("".join([f"<div>• {h(t)} — {c}</div>" for (t,c) in top_titles]) if top_titles else "<div>No findings detected in this window.</div>")}
