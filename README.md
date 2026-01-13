@@ -1,109 +1,106 @@
-# ☁️ CloudAuditPro  
-**Automated AWS Security & Compliance Reporting**
+# CloudAuditPro ☁️🔐
 
-CloudAuditPro is a lightweight SaaS-style application that automatically scans AWS accounts for security misconfigurations using **AWS Security Hub**, then delivers clear, actionable weekly reports via **email or Slack**.  
+**CloudAuditPro** is a security posture and compliance intelligence platform for AWS environments.  
+It helps teams identify misconfigurations, assess risk, and understand their compliance posture across industry frameworks — all from a single dashboard.
 
-It’s designed to give teams **instant visibility** into their AWS security posture — without requiring deep AWS expertise or console access.
-
----
-
-## 🚀 Why CloudAuditPro
-
-| Problem with Security Hub | CloudAuditPro Advantage |
-|----------------------------|--------------------------|
-| Raw, technical findings that require AWS expertise | Summarized reports in plain English with clear “how-to-fix” steps |
-| Results locked inside AWS Console | Weekly automated email & Slack reports for all stakeholders |
-| Multi-account data requires manual aggregation | Unified, cross-account view using AssumeRole |
-| No compliance context | Findings mapped to CIS / NIST controls (coming soon) |
-| No trend visibility | Weekly history & improvement tracking (planned) |
-
-> **In short:**  
-> Security Hub tells you what’s wrong — **CloudAuditPro tells you what to fix, when, and how.**
+> Built for speed, clarity, and real-world cloud security operations.
 
 ---
 
-## 🧠 How It Works
+## 🚀 What CloudAuditPro Does
 
-1. **User connects AWS account**  
-   - Deploys a simple, read-only IAM role using the provided CloudFormation template.  
-   - Grants CloudAuditPro permission to assume the role securely with an External ID.
+CloudAuditPro continuously analyzes AWS environments to surface security risks, configuration gaps, and compliance-related findings.
 
-2. **Automated scan**  
-   - CloudAuditPro uses the AWS SDK (boto3) to assume the role and query **Security Hub** findings.  
-   - Findings are summarized, prioritized, and mapped to known compliance frameworks.
+Key capabilities include:
 
-3. **Report generation & delivery**  
-   - A scheduled Lambda job (via EventBridge) generates weekly reports.  
-   - Reports are emailed via **Amazon SES** or sent to a Slack channel.
+- 🔍 **Automated AWS Security Scans**
+  - Identity & Access Management (IAM)
+  - S3 bucket security (encryption, public access, policies)
+  - EC2, EBS, and network exposure
+  - Logging & monitoring posture
 
-4. **Dashboard (optional)**  
-   - A React-based frontend displays aggregated risk scores, recent findings, and account summaries.
+- 📊 **Compliance Framework Mapping**
+  - CIS AWS Foundations Benchmark
+  - SOC 2 (Security Trust Services Criteria)
+  - PCI DSS v4.0 (technical control mapping)
 
----
+- 🧠 **Actionable Findings**
+  - Clear pass / fail checks
+  - Risk-weighted insights
+  - Evidence-oriented outputs for audits and reviews
 
-## 🧩 Architecture Overview
-
-
-**Tech Stack:**
-- **Backend:** Python + FastAPI  
-- **Frontend:** React + Vite + Tailwind CSS  
-- **Infrastructure:** AWS Lambda (Zappa), EventBridge, SES  
-- **Auth:** AWS Cognito (optional)  
-- **Payments:** Stripe Checkout  
+- 🧩 **Multi-Account Ready**
+  - Secure cross-account access via IAM roles
+  - Centralized visibility across environments
 
 ---
 
-## ⚙️ Setup (Developer Quickstart)
+## 🧭 Compliance Frameworks (Important)
 
-### 🖥 Backend Setup
-```bash
-# Clone repo
-git clone https://github.com/YOURUSERNAME/CloudAuditPro.git
-cd CloudAuditPro/backend
+CloudAuditPro provides **automated technical assessments and control mappings** aligned to industry frameworks.
 
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
+It **does not** provide certification, legal advice, or audit opinions.
 
-# Install dependencies
-pip install -r requirements.txt
+### Supported Frameworks
+- **CIS AWS Foundations Benchmark**  
+  Objective, technical AWS security controls designed for automation.
 
-# Copy environment template
-cp ../.env.example ../.env
-# then edit .env with your AWS + Stripe credentials
+- **SOC 2 (Security)**  
+  Control mapping and readiness support for SaaS environments.
 
-# Run locally
-python -m uvicorn app.main:app --reload
-```
-### 🖥 Frontend Setup
-```bash
-cd ../frontend
-npm install
-npm run dev
-```
+- **PCI DSS v4.0**  
+  Technical requirement mapping for AWS environments that handle cardholder data.
 
-### 🔁 Flowchart
-```lua
-+-------------------+
-|   React Frontend  |
-| (localhost:5173)  |
-+---------+---------+
-          |
-          v
-+-------------------+        +----------------------+
-|  FastAPI Backend  | <----> |  Storage (DynamoDB)  |
-|  (uvicorn:8000)   |        |  or Postgres         |
-+----+---+---+------+        +----------------------+
-     |   |   |
-     |   |   +------------------> SES (email reports)
-     |   +----------------------> Slack (alerts)
-     |
-     +--> AWS Scanner ---------------> AWS STS AssumeRole
-     |                                 | 
-     |                                 +--> Security Hub
-     |                                 +--> Config / S3 / EC2
-     |
-     +--> Network Scanner ------------> ASA / Nagios / TACACS
+> CloudAuditPro is designed to support **compliance readiness and continuous monitoring**, not to replace formal audits or certifications.
+
+---
+
+## 🛠️ Architecture (High Level)
+
+- **Backend:** Python (FastAPI)
+- **Frontend:** React + Tailwind CSS
+- **Cloud Provider:** AWS
+- **Data Sources:** AWS APIs (STS, IAM, EC2, S3, CloudTrail, Config, etc.)
+- **Security Model:** Least-privilege IAM role assumption
+
+Scans are designed to run asynchronously and safely without impacting customer workloads.
+
+---
+
+## 🔐 Security & Access
+
+- No customer credentials are stored
+- Access is performed via customer-controlled IAM roles
+- Read-only permissions by default
+- Designed with least-privilege principles
+
+---
+
+## ⚠️ Disclaimer
+
+CloudAuditPro provides automated security posture insights and compliance mappings based on available AWS configuration data.
+
+It does **not**:
+- Guarantee compliance
+- Provide legal or regulatory advice
+- Replace third-party audits or certifications
+
+Customers are responsible for how findings are interpreted and used.
+
+---
+
+## 📄 License
+
+This project is **proprietary software**.
 
 
+---
 
+## 📬 Contact
+
+For questions, access requests, or partnership inquiries:  
+📧 sasewani@gmail.com
+
+---
+
+© 2026 CloudAuditPro. All rights reserved.
