@@ -10,6 +10,9 @@ import ResetPasswordPage from "./ResetPasswordPage.jsx";
 import AboutPage from "./AboutPage.jsx";
 import SecurityPage from "./SecurityPage.jsx";
 import HowItWorksPage from "./HowItWorksPage.jsx";
+import TermsOfService from "./legal/TermsOfService.jsx";
+import PrivacyPolicy from "./legal/PrivacyPolicy.jsx";
+
 
 function Root() {
   const { token, user, loading, logout } = useAuth();
@@ -40,6 +43,10 @@ if (path.startsWith("/reset-password")) {
   app = <ResetPasswordPage />;
 } else if (path.startsWith("/forgot-password")) {
   app = <ForgotPasswordPage />;
+} else if (path.startsWith("/terms")) {
+  app = <TermsOfService />;
+} else if (path.startsWith("/privacy")) {
+  app = <PrivacyPolicy />;
 } else if (path === "/" || path.startsWith("/about")) {
   // Marketing/landing page
   app = <AboutPage />;

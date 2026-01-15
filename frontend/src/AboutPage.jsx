@@ -373,24 +373,31 @@ export default function AboutPage() {
         </section>
 
         {/* FOOTER STRIP */}
-        <footer className="mt-4 border-t border-slate-800 pt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-[11px] text-gray-500">
-          <div>
+        <footer className="mt-4 border-t border-slate-800 pt-4 flex flex-col gap-3 text-[11px] text-gray-500">
+          <div className="flex flex-wrap items-center gap-3">
             <span className="font-mono text-indigo-200">
               CloudAuditPro • Version {APP_VERSION}
             </span>
-            <span className="ml-2 text-gray-500">
-              (set via <code className="font-mono">VITE_APP_VERSION</code>)
-            </span>
+            <span className="text-gray-500">•</span>
+
+            <a href="/terms" className="hover:text-gray-300 underline">
+              Terms
+            </a>
+            <a href="/privacy" className="hover:text-gray-300 underline">
+              Privacy
+            </a>
           </div>
-          <div className="text-gray-400">
-            Security-first. Read-only. Built to make AWS security reviews less
-            painful.
+
+          <div className="text-gray-400 max-w-3xl">
+            CloudAuditPro provides automated security assessments and control mappings.
+            It does not provide legal, regulatory, or audit certification services.
           </div>
         </footer>
       </main>
     </div>
   );
 }
+
 
 function StatCard({ label, value, note }) {
   return (

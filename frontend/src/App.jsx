@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "./AuthContext";
 import { apiFetch } from "./apiClient";
 import GlowDot from "./GlowDot";
+import SiteFooter from "./components/SiteFooter";
 
 const APP_VERSION = import.meta.env.VITE_APP_VERSION || "v0.1.0";
 const CLOUDAUDITPRO_ACCOUNT_ID = "851725210465";
@@ -3818,8 +3819,8 @@ const rdsCount =
                   </div>
                 );
               })()}
-
-
+      {/* Shared app footer */}
+      <SiteFooter />
     </div>
   );
 }
