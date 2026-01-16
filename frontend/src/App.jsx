@@ -546,7 +546,7 @@ useEffect(() => {
     setLoadingScan(true);
     setError("");
     setScanResult(null);
-
+  
     try {
       const data = await apiFetch("/scan", {
         token,
@@ -554,27 +554,44 @@ useEffect(() => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(commonBody),
       });
+  
       setScanResult(data);
+  
+      // Friendly message if Security Hub isn't enabled
+      if (data?.securityhub_enabled === false) {
+        setToast({
+          type: "error",
+          message:
+            "Security Hub isn’t enabled in this AWS account/region. Enable it in AWS, then re-run the scan.",
+        });
+      }
+  
       markCheckRun("security_hub");
-
+  
       // Determine pass/fail for Security Hub
-      const passed = data.count === 0;
+      const passed =
+        data?.securityhub_enabled === false ? false : (data?.count ?? 0) === 0;
+  
       recordFixedChanges(
         {
           security_hub: {
             label: "Security Hub findings",
             passed,
+            enabled: data?.securityhub_enabled,
           },
         },
         "Security Hub scan"
       );
     } catch (err) {
       console.error("Scan error:", err);
-      setError(err.message || "Scan failed");
+      setError(err.message || "Failed to run scan");
     } finally {
       setLoadingScan(false);
     }
   };
+  
+
+
 
   const handleEmailReport = async () => {
     setLoadingEmail(true);
@@ -3251,28 +3268,53 @@ const rdsCount =
 
 
 
-                    {/* Security Hub */}
-                    {scanResult && (
-                      <section className="mb-5">
-                        <h3 className="text-sm font-semibold text-gray-200 mb-1">
-                          Security Hub scan
-                        </h3>
-                        <p className="text-xs text-gray-400 mb-1">
-                          Findings:{" "}
-                          <span className="text-gray-200 font-mono">
-                            {scanResult.count}
-                          </span>
-                        </p>
-                        <div className="text-xs text-gray-300 bg-black/60 rounded p-3 whitespace-pre-wrap font-mono">
-                          {scanResult.summary}
-                        </div>
-                        <p className="text-[11px] text-gray-500 mt-1">
-                          Tip: Security Hub aggregates findings from multiple
-                          AWS services. Use this as your high-level risk
-                          overview.
-                        </p>
-                      </section>
-                    )}
+        {/* Security Hub */}
+        {scanResult && (
+          <section className="mb-5">
+            <h3 className="text-sm font-semibold text-gray-200 mb-1">
+              Security Hub scan
+            </h3>
+
+            {/* ⚠️ Security Hub not enabled */}
+            {scanResult.securityhub_enabled === false && (
+              <div className="mb-2 rounded-xl border border-amber-700/30 bg-amber-900/10 px-4 py-3 text-xs text-amber-200">
+                <div className="font-semibold">Security Hub isn’t enabled</div>
+
+                <div className="mt-1 text-amber-200/90 leading-relaxed">
+                  Enable Security Hub in this AWS account and region, then re-run the scan
+                  to view findings.
+                </div>
+
+                {/* ✅ NEW: Open Security Hub link */}
+                <a
+                  href={`https://${commonBody?.region || "us-east-1"}.console.aws.amazon.com/securityhub/home?region=${region || "us-east-1"}#/summary`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-block mt-2 text-xs text-amber-200 underline hover:text-amber-100"
+                >
+                  Open Security Hub in AWS →
+                </a>
+              </div>
+      )}
+
+            <p className="text-xs text-gray-400 mb-1">
+              Findings:{" "}
+              <span className="text-gray-200 font-mono">
+                {scanResult.count}
+              </span>
+            </p>
+
+            <div className="text-xs text-gray-300 bg-black/60 rounded p-3 whitespace-pre-wrap font-mono">
+              {scanResult.summary}
+            </div>
+
+            <p className="text-[11px] text-gray-500 mt-1">
+              Tip: Security Hub aggregates findings from multiple AWS services. Use this
+              as your high-level risk overview.
+            </p>
+          </section>
+        )}
+
 
                     {/* S3 Security */}
                     {s3Summary && (

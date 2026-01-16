@@ -115,11 +115,32 @@ def scan(
     try:
         creds = assume_customer_role(inp.account_id, inp.role_name)
         sh = securityhub_client_from_creds(creds, inp.region)
-        findings = list_findings(sh, inp.start_iso, inp.end_iso)
-        summary = build_summary(findings)
-        return {"count": len(findings), "summary": summary}
+        securityhub_enabled = True
+        try:
+            findings = list_findings(sh, inp.start_iso, inp.end_iso)
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code")
+            if code in ("InvalidAccessException", "AccessDeniedException"):
+                # Not subscribed / not enabled / or blocked
+                securityhub_enabled = False
+                findings = []
+            else:
+                raise
+
+        summary = (
+            build_summary(findings)
+            if securityhub_enabled
+            else "Security Hub is not enabled in this AWS account/region. Enable Security Hub to view findings."
+        )
+
+        return {
+            "count": len(findings),
+            "summary": summary,
+            "securityhub_enabled": securityhub_enabled,
+        }
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/report/email")
@@ -628,9 +649,21 @@ def compliance_summary(
 
         # --- 1) Security Hub ---
         sh_client = securityhub_client_from_creds(creds, region)
-        findings = list_findings(sh_client, inp.start_iso, inp.end_iso)
+        securityhub_enabled = True
+        try:
+            findings = list_findings(sh_client, inp.start_iso, inp.end_iso)
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code")
+            if code in ("InvalidAccessException", "AccessDeniedException"):
+                securityhub_enabled = False
+                findings = []
+            else:
+                raise
+
         sh_count = len(findings)
-        sec_hub_ok = sh_count == 0
+
+        # If Security Hub isn't enabled, treat as "not passing" (or you could treat as "N/A")
+        sec_hub_ok = securityhub_enabled and (sh_count == 0)
 
         # --- 2) S3 baseline ---
         s3_list = get_s3_security_summary(creds, region)
@@ -667,7 +700,11 @@ def compliance_summary(
                 "id": "security_hub",
                 "label": "Security Hub findings",
                 "passed": sec_hub_ok,
-                "details": {"finding_count": sh_count},
+                "details": {
+                    "finding_count": sh_count,
+                    "enabled": securityhub_enabled,
+                    "note": None if securityhub_enabled else "Security Hub is not enabled in this account/region.",
+                },
             },
             "s3_baseline": {
                 "id": "s3_baseline",
