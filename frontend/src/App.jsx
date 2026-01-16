@@ -564,20 +564,22 @@ useEffect(() => {
           message:
             "Security Hub isn’t enabled in this AWS account/region. Enable it in AWS, then re-run the scan.",
         });
+  
+        // ❗ IMPORTANT: stop here so we don't mark it as “passing”
+        return;
       }
   
       markCheckRun("security_hub");
   
-      // Determine pass/fail for Security Hub
-      const passed =
-        data?.securityhub_enabled === false ? false : (data?.count ?? 0) === 0;
+      // Only evaluate pass/fail when Security Hub IS enabled
+      const passed = (data?.count ?? 0) === 0;
   
       recordFixedChanges(
         {
           security_hub: {
             label: "Security Hub findings",
             passed,
-            enabled: data?.securityhub_enabled,
+            enabled: true,
           },
         },
         "Security Hub scan"
@@ -589,6 +591,7 @@ useEffect(() => {
       setLoadingScan(false);
     }
   };
+  
   
 
 
