@@ -1,3 +1,5 @@
+CloudAuditPro™ is developed and operated by 9o5 Enterprises, LLC.
+
 # CloudAuditPro ☁️🔐
 
 **CloudAuditPro** is a security posture and compliance intelligence platform for AWS environments.  
@@ -91,7 +93,11 @@ Customers are responsible for how findings are interpreted and used.
 
 ## 📄 License
 
-This project is **proprietary software**.
+CloudAuditPro™ is a **proprietary software product** of **9o5 Enterprises, LLC**.
+
+This project is not open-source. Unauthorized copying, modification, distribution, or use is prohibited without prior written permission from 9o5 Enterprises, LLC.
+
+© 2026 9o5 Enterprises, LLC. All rights reserved.
 
 
 ---
@@ -103,4 +109,5 @@ For questions, access requests, or partnership inquiries:
 
 ---
 
-© 2026 CloudAuditPro. All rights reserved.
+© 2026 9o5 Enterprises, LLC. All rights reserved.  
+CloudAuditPro™ is a product of 9o5 Enterprises, LLC.
