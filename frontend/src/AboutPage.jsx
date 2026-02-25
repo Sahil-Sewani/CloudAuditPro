@@ -392,6 +392,13 @@ export default function AboutPage() {
             CloudAuditPro provides automated security assessments and control mappings.
             It does not provide legal, regulatory, or audit certification services.
           </div>
+
+          {/* Ownership + Copyright */}
+          <div className="text-gray-500">
+            <strong>Powered by 9o5 Enterprises, LLC</strong><br />
+            CloudAuditPro™ is a product of 9o5 Enterprises, LLC.<br />
+            © 2026 9o5 Enterprises, LLC. All rights reserved.
+          </div>
         </footer>
       </main>
     </div>

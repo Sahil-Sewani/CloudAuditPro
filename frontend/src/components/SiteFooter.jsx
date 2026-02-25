@@ -6,17 +6,23 @@ export default function SiteFooter() {
   return (
     <footer className="mt-auto border-t border-indigo-900/60 bg-black/30 backdrop-blur px-6 py-6 text-xs text-indigo-100/80">
       <div className="max-w-6xl mx-auto flex flex-col gap-3">
+
+        {/* Links + Ownership */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <a href="/terms" className="hover:text-indigo-200">
-          Terms
-        </a>
-        <a href="/privacy" className="hover:text-indigo-200">
-          Privacy
-        </a>
+          <a href="/terms" className="hover:text-indigo-200">
+            Terms
+          </a>
+          <a href="/privacy" className="hover:text-indigo-200">
+            Privacy
+          </a>
           <span className="text-indigo-200/40">•</span>
-          <span>© {year} CloudAuditPro. All rights reserved.</span>
+          <span>
+            Powered by 9o5 Enterprises, LLC — CloudAuditPro™ is a product of
+            9o5 Enterprises, LLC. © {year} 9o5 Enterprises, LLC. All rights reserved.
+          </span>
         </div>
 
+        {/* Compliance Disclaimer (KEEP THIS) */}
         <div className="rounded-xl border border-indigo-500/20 bg-indigo-950/30 p-4 leading-relaxed">
           <div className="font-semibold text-indigo-100">
             Important compliance disclaimer
@@ -32,6 +38,7 @@ export default function SiteFooter() {
             validating results and determining applicability to your environment.
           </div>
         </div>
+
       </div>
     </footer>
   );
