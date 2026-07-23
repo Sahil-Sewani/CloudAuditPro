@@ -1,5 +1,15 @@
 # CloudAuditPro
 
+## Live Demo
+
+**Application:** https://app.cloudauditpro.app
+
+CloudAuditPro is deployed on AWS as a production application.
+
+> Access is restricted to authorized users. If you're evaluating the platform, I'd be happy to provide a walkthrough or demonstration.
+
+---
+
 CloudAuditPro is an AWS security posture and compliance intelligence
 platform. It connects to customer AWS accounts through a read-only IAM
 role, evaluates security controls, inventories exposed resources, and
