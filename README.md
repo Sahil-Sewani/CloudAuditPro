@@ -191,7 +191,7 @@ The repository does not currently include an automated backend test suite.
 - API scan routes are protected with JWT authentication.
 - Cross-origin access is limited to configured frontend origins.
 
-Please report suspected vulnerabilities privately to [sahil@9o5enterprises.com](mailto:sasewani@gmail.com). Do not open a public issue containing sensitive details.
+Please report suspected vulnerabilities privately to [sahil@9o5enterprises.com](mailto:sahil@9o5enterprises.com). Do not open a public issue containing sensitive details.
 
 ## Compliance disclaimer
 
@@ -203,7 +203,7 @@ CloudAuditPro™ is proprietary software owned by 9o5 Enterprises, LLC. It is no
 
 ## Contact
 
-Questions, access requests, and partnership inquiries: [sasewani@gmail.com](mailto:sasewani@gmail.com)
+Questions, access requests, and partnership inquiries: [sahil@9o5enterprises.com](mailto:sahil@9o5enterprises.com)
 
 © 2026 9o5 Enterprises, LLC. All rights reserved.
 
