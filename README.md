@@ -4,7 +4,7 @@
 
 **Application:** https://app.cloudauditpro.app
 
-CloudAuditPro is deployed on AWS as a demo application.
+CloudAuditPro is deployed on AWS as a beta application.
 
 > Access is restricted to authorized users. If you're evaluating the platform, I'd be happy to provide a walkthrough or demonstration.
 
