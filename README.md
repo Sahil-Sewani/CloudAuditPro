@@ -196,7 +196,7 @@ The repository does not currently include an automated backend test suite.
 - API scan routes are protected with JWT authentication.
 - Cross-origin access is limited to configured frontend origins.
 
-Please report suspected vulnerabilities privately to [sasewani@gmail.com](mailto:sasewani@gmail.com). Do not open a public issue containing sensitive details.
+Please report suspected vulnerabilities privately to [sahil@9o5enterprises.com](mailto:sasewani@gmail.com). Do not open a public issue containing sensitive details.
 
 ## Compliance disclaimer
 
