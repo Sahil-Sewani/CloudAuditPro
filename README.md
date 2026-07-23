@@ -144,11 +144,6 @@ Set `DATABASE_URL` to the appropriate database connection string for
 each environment. SQLite is used by default for local development;
 production deployments should use an Amazon RDS PostgreSQL instance.
 
-> **Note:** Continue using the remainder of your original README (setup
-> instructions, API overview, onboarding guide, compliance disclaimer,
-> license, and contact information). Only remove the sentence stating
-> that there is no automated backend test suite.
-
 ## AWS account onboarding
 
 CloudAuditPro scans customer accounts by assuming a customer-controlled read-only IAM role. A starter CloudFormation template is available at [`infra/iam/cloudauditpro_role.yml`](infra/iam/cloudauditpro_role.yml).
