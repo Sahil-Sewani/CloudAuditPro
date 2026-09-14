@@ -3451,10 +3451,69 @@ const rdsCount =
                               configuration changes, which is essential for
                               investigations and compliance evidence.
                             </p>
-                            <p className="text-[11px] text-gray-400 mb-1">
-                              Fix: Create a configuration recorder and enable
-                              recording for all resources.
-                            </p>
+
+                            {configResult.ai_remediation ? (
+                              <div className="mt-3 mb-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-3">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className="text-sm">✨</span>
+                                  <p className="text-xs font-semibold text-indigo-300">
+                                    AI Remediation Advisor
+                                  </p>
+                                </div>
+
+                                <div className="mb-3">
+                                  <p className="text-[11px] font-semibold text-gray-300 mb-1">
+                                    Why this matters
+                                  </p>
+                                  <p className="text-[11px] text-gray-400 leading-relaxed">
+                                    {configResult.ai_remediation.summary}
+                                  </p>
+                                </div>
+
+                                {configResult.ai_remediation.risk && (
+                                  <div className="mb-3">
+                                    <p className="text-[11px] font-semibold text-red-300 mb-1">
+                                      Risk
+                                    </p>
+                                    <p className="text-[11px] text-gray-400 leading-relaxed">
+                                      {configResult.ai_remediation.risk}
+                                    </p>
+                                  </div>
+                                )}
+
+                                {configResult.ai_remediation.remediation_steps?.length > 0 && (
+                                  <div>
+                                    <p className="text-[11px] font-semibold text-emerald-300 mb-1">
+                                      Recommended remediation
+                                    </p>
+
+                                    <ol className="list-decimal list-inside space-y-1">
+                                      {configResult.ai_remediation.remediation_steps.map(
+                                        (step, index) => (
+                                          <li
+                                            key={index}
+                                            className="text-[11px] text-gray-400 leading-relaxed"
+                                          >
+                                            {step}
+                                          </li>
+                                        )
+                                      )}
+                                    </ol>
+                                  </div>
+                                )}
+
+                                <p className="text-[10px] text-gray-500 mt-3">
+                                  AI-generated guidance. Validate recommendations before making
+                                  production changes.
+                                </p>
+                              </div>
+                            ) : (
+                              <p className="text-[11px] text-gray-400 mb-1">
+                                Fix: Create a configuration recorder and enable recording for all
+                                resources.
+                              </p>
+                            )}
+
                             <a
                               href="https://docs.aws.amazon.com/config/latest/developerguide/setting-up-aws-config.html"
                               target="_blank"
