@@ -65,7 +65,16 @@ Do not claim formal compliance certification.
         },
     )
 
-    text = response["output"]["message"]["content"][0]["text"]
+    text = response["output"]["message"]["content"][0]["text"].strip()
+
+    # Some models may wrap JSON in Markdown code fences.
+    if text.startswith("```json"):
+        text = text[len("```json"):].strip()
+    elif text.startswith("```"):
+        text = text[len("```"):].strip()
+
+    if text.endswith("```"):
+        text = text[:-3].strip()
 
     try:
         return json.loads(text)
