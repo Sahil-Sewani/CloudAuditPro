@@ -12,6 +12,7 @@ from . import models
 import boto3
 from html import escape
 from botocore.exceptions import ClientError
+from app.bedrock import generate_remediation
 
 from .aws import (
     assume_customer_role,
@@ -592,7 +593,33 @@ def check_config(
     try:
         creds = assume_customer_role(inp.account_id, inp.role_name)
         status = get_config_status(creds, inp.region)
+
+        cfg_ok = (
+            bool(status.get("recorder_configured"))
+            and bool(status.get("recording_enabled"))
+        )
+
+        if not cfg_ok:
+            if status.get("error"):
+                finding = (
+                    "CloudAuditPro could not verify AWS Config status because "
+                    f"the AWS API returned an error: {status['error']}"
+                )
+            elif not status.get("recorder_configured"):
+                finding = "No AWS Config recorder is configured."
+            else:
+                finding = (
+                    "An AWS Config recorder exists, but none are actively recording."
+                )
+
+            status["ai_remediation"] = generate_remediation(
+                service="AWS Config",
+                status="FAIL",
+                finding=finding,
+            )
+
         return status
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
