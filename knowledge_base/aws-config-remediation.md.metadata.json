@@ -1,0 +1,9 @@
+{
+  "metadataAttributes": {
+    "control_id": "CLOUDAUDITPRO-AWS-CONFIG-RECORDER",
+    "service": "AWS Config",
+    "document_type": "remediation_guidance",
+    "trust_level": "approved",
+    "content_version": "1"
+  }
+}

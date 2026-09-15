@@ -616,6 +616,7 @@ def check_config(
                 service="AWS Config",
                 status="FAIL",
                 finding=finding,
+                control_id="CLOUDAUDITPRO-AWS-CONFIG-RECORDER",
             )
 
         return status
