@@ -12,10 +12,11 @@ RUN pip install --no-cache-dir --upgrade pip \
 
 COPY app ./app
 
-RUN adduser --disabled-password --gecos "" appuser \
-    && chown -R appuser:appuser /app
+RUN groupadd --gid 10001 appgroup \
+    && useradd --uid 10001 --gid appgroup --no-create-home --shell /usr/sbin/nologin appuser \
+    && chown -R 10001:10001 /app
 
-USER appuser
+USER 10001:10001
 
 EXPOSE 8000
 

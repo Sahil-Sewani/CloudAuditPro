@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloudauditpro-backend
+  namespace: cloudauditpro-dev
+  labels:
+    app: cloudauditpro-backend
+spec:
+  type: ClusterIP
+  selector:
+    app: cloudauditpro-backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
